@@ -1,18 +1,21 @@
 """
-Computer Vision Pre-filter Module
+Computer Vision Pre-filter for Astrophotography Quality Assessment
 
-Traditional computer vision techniques for detecting common astrophotography artifacts
-like satellite streaks, airplane trails, and cloud contamination. This module provides
-initial filtering to help with training data generation and reduces manual labeling effort.
+This module implements traditional computer vision techniques to detect
+common artifacts in astronomical images before ML processing.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 import cv2
 import numpy as np
 from scipy import ndimage
 from skimage import filters, morphology
+
+if TYPE_CHECKING:
+    from .fits_processor import FITSProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ class ArtifactDetector:
     def __init__(self, min_streak_length: int = 50, min_streak_strength: float = 0.3):
         """
         Initialize artifact detector.
-        
+
         Args:
             min_streak_length: Minimum length in pixels for streak detection
             min_streak_strength: Minimum strength threshold for streaks
@@ -31,13 +34,13 @@ class ArtifactDetector:
         self.min_streak_length = min_streak_length
         self.min_streak_strength = min_streak_strength
 
-    def detect_linear_streaks(self, image: np.ndarray) -> Dict[str, Any]:
+    def detect_linear_streaks(self, image: np.ndarray) -> dict[str, Any]:
         """
         Detect linear streaks (satellites, airplanes) using Hough transform.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Dictionary containing streak detection results
         """
@@ -51,13 +54,13 @@ class ArtifactDetector:
         lines = cv2.HoughLinesP(
             edges,
             rho=1,
-            theta=np.pi/180,
+            theta=np.pi / 180,
             threshold=30,
             minLineLength=self.min_streak_length,
             maxLineGap=10,
         )
 
-        streak_info = {
+        streak_info: dict[str, Any] = {
             "has_streaks": False,
             "num_streaks": 0,
             "streak_coordinates": [],
@@ -75,7 +78,7 @@ class ArtifactDetector:
                 x1, y1, x2, y2 = line[0]
 
                 # Calculate streak properties
-                length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
 
                 streak_info["streak_coordinates"].append([(x1, y1), (x2, y2)])
@@ -86,17 +89,19 @@ class ArtifactDetector:
                 lengths = streak_info["streak_lengths"]
                 assert isinstance(lengths, list), "Expected list of lengths"
                 streak_info["max_streak_length"] = max(lengths)
-            streak_info["streak_density"] = len(lines) / (image.shape[0] * image.shape[1])
+            streak_info["streak_density"] = len(lines) / (
+                image.shape[0] * image.shape[1]
+            )
 
         return streak_info
 
-    def detect_clouds(self, image: np.ndarray) -> Dict[str, Any]:
+    def detect_clouds(self, image: np.ndarray) -> dict[str, Any]:
         """
         Detect cloud contamination using texture analysis.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Dictionary containing cloud detection results
         """
@@ -129,18 +134,20 @@ class ArtifactDetector:
         }
 
         if num_clouds > 0:
-            cloud_areas = [np.sum(labeled_clouds == i) for i in range(1, num_clouds + 1)]
+            cloud_areas = [
+                np.sum(labeled_clouds == i) for i in range(1, num_clouds + 1)
+            ]
             cloud_info["largest_cloud_area"] = max(cloud_areas)
 
         return cloud_info
 
-    def detect_saturation(self, image: np.ndarray) -> Dict[str, Any]:
+    def detect_saturation(self, image: np.ndarray) -> dict[str, Any]:
         """
         Detect saturated regions that might indicate overexposure.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Dictionary containing saturation detection results
         """
@@ -160,13 +167,13 @@ class ArtifactDetector:
 
         return saturation_info
 
-    def detect_hot_pixels(self, image: np.ndarray) -> Dict[str, Any]:
+    def detect_hot_pixels(self, image: np.ndarray) -> dict[str, Any]:
         """
         Detect hot pixels and cosmic ray hits.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Dictionary containing hot pixel detection results
         """
@@ -190,13 +197,13 @@ class ArtifactDetector:
 
         return hot_pixel_info
 
-    def calculate_image_quality_metrics(self, image: np.ndarray) -> Dict[str, float]:
+    def calculate_image_quality_metrics(self, image: np.ndarray) -> dict[str, float]:
         """
         Calculate various image quality metrics.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Dictionary of quality metrics
         """
@@ -224,6 +231,7 @@ class ArtifactDetector:
 
         # Find local maxima
         from scipy.ndimage import maximum_filter
+
         local_maxima = (enhanced == maximum_filter(enhanced, size=5)) & (enhanced > 0.5)
         star_count = np.sum(local_maxima)
 
@@ -236,17 +244,17 @@ class ArtifactDetector:
             "star_density": float(star_count / image.size),
         }
 
-    def comprehensive_analysis(self, image: np.ndarray) -> Dict[str, Any]:
+    def comprehensive_analysis(self, image: np.ndarray) -> dict[str, Any]:
         """
         Perform comprehensive artifact and quality analysis.
-        
+
         Args:
             image: Normalized image array [0, 1]
-            
+
         Returns:
             Complete analysis results
         """
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "streaks": self.detect_linear_streaks(image),
             "clouds": self.detect_clouds(image),
             "saturation": self.detect_saturation(image),
@@ -263,13 +271,13 @@ class ArtifactDetector:
 
         return results
 
-    def _calculate_quality_score(self, analysis_results: Dict[str, Any]) -> float:
+    def _calculate_quality_score(self, analysis_results: dict[str, Any]) -> float:
         """
         Calculate overall quality score from analysis results.
-        
+
         Args:
             analysis_results: Results from comprehensive_analysis
-            
+
         Returns:
             Quality score between 0 (poor) and 1 (excellent)
         """
@@ -282,17 +290,26 @@ class ArtifactDetector:
 
         # Penalize for clouds
         if analysis_results["clouds"]["has_clouds"]:
-            cloud_penalty = min(0.4, analysis_results["clouds"]["cloud_coverage_percent"] * 0.01)
+            cloud_penalty = min(
+                0.4,
+                analysis_results["clouds"]["cloud_coverage_percent"] * 0.01,
+            )
             score -= cloud_penalty
 
         # Penalize for excessive saturation
         if analysis_results["saturation"]["saturation_percent"] > 1.0:
-            sat_penalty = min(0.3, analysis_results["saturation"]["saturation_percent"] * 0.01)
+            sat_penalty = min(
+                0.3,
+                analysis_results["saturation"]["saturation_percent"] * 0.01,
+            )
             score -= sat_penalty
 
         # Penalize for too many hot pixels
         if analysis_results["hot_pixels"]["hot_pixel_density"] > 0.001:
-            hot_penalty = min(0.2, analysis_results["hot_pixels"]["hot_pixel_density"] * 100)
+            hot_penalty = min(
+                0.2,
+                analysis_results["hot_pixels"]["hot_pixel_density"] * 100,
+            )
             score -= hot_penalty
 
         # Bonus for good sharpness and contrast
@@ -304,13 +321,13 @@ class ArtifactDetector:
 
         return max(0.0, min(1.0, score))
 
-    def _needs_manual_review(self, analysis_results: Dict[str, Any]) -> bool:
+    def _needs_manual_review(self, analysis_results: dict[str, Any]) -> bool:
         """
         Determine if image needs manual review based on analysis.
-        
+
         Args:
             analysis_results: Results from comprehensive_analysis
-            
+
         Returns:
             True if manual review is recommended
         """
@@ -331,36 +348,65 @@ class ArtifactDetector:
         return False
 
 
-def batch_analyze_images(image_paths: List[str],
-                        detector: Optional[ArtifactDetector] = None) -> Dict[str, Dict[str, Any]]:
+def batch_analyze_images(
+    image_paths: list[str],
+    detector: Optional[ArtifactDetector] = None,
+    fits_processor: Optional["FITSProcessor"] = None,
+) -> dict[str, dict[str, Any]]:
     """
     Analyze a batch of images for artifacts and quality.
-    
+
     Args:
-        image_paths: List of paths to image files
+        image_paths: List of paths to image files (supports FITS and standard formats)
         detector: Optional pre-configured detector instance
-        
+        fits_processor: Optional FITSProcessor for FITS files
+
     Returns:
         Dictionary mapping file paths to analysis results
     """
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from .fits_processor import FITSProcessor
+
     if detector is None:
         detector = ArtifactDetector()
+
+    if fits_processor is None:
+        from .fits_processor import FITSProcessor
+
+        fits_processor = FITSProcessor()
 
     results = {}
 
     for image_path in image_paths:
         try:
-            # Load image (this would use the FITSProcessor in practice)
-            image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            if image is not None:
-                # Normalize to [0, 1]
-                image_norm = image.astype(np.float64) / 255.0
+            # Check if this is a FITS file
+            path_obj = Path(image_path)
+            is_fits = path_obj.suffix.lower() in [".fits", ".fit"]
 
-                # Analyze
-                analysis = detector.comprehensive_analysis(image_norm)
-                results[image_path] = analysis
+            if is_fits:
+                # Use FITSProcessor for FITS files
+                fits_data = fits_processor.load_fits_file(path_obj)
+                if fits_data:
+                    # Normalize the image
+                    image_norm = fits_processor.normalize_image(fits_data["image_data"])
+                    # Analyze
+                    analysis = detector.comprehensive_analysis(image_norm)
+                    results[image_path] = analysis
+                else:
+                    logger.warning(f"Could not load FITS file: {image_path}")
             else:
-                logger.warning(f"Could not load image: {image_path}")
+                # Use OpenCV for standard image formats
+                image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+                if image is not None:
+                    # Normalize to [0, 1]
+                    image_norm = image.astype(np.float64) / 255.0
+                    # Analyze
+                    analysis = detector.comprehensive_analysis(image_norm)
+                    results[image_path] = analysis
+                else:
+                    logger.warning(f"Could not load image: {image_path}")
 
         except Exception as e:
             logger.error(f"Error analyzing {image_path}: {e}")
@@ -368,15 +414,17 @@ def batch_analyze_images(image_paths: List[str],
     return results
 
 
-def filter_images_by_quality(analysis_results: Dict[str, Dict[str, Any]],
-                            quality_threshold: float = 0.6) -> Tuple[List[str], List[str]]:
+def filter_images_by_quality(
+    analysis_results: dict[str, dict[str, Any]],
+    quality_threshold: float = 0.6,
+) -> Tuple[list[str], list[str]]:
     """
     Filter images based on quality analysis results.
-    
+
     Args:
         analysis_results: Results from batch_analyze_images
         quality_threshold: Minimum quality score for acceptance
-        
+
     Returns:
         Tuple of (good_images, poor_images) file paths
     """

@@ -23,20 +23,20 @@ dependencies = [
     # Core ML and image processing - CPU only for RPi5 compatibility
     "torch>=2.0.0,<2.3.0; platform_machine=='x86_64'",
     "torch>=2.0.0; platform_machine!='x86_64'",
-    "torchvision>=0.15.0,<0.18.0; platform_machine=='x86_64'", 
+    "torchvision>=0.15.0,<0.18.0; platform_machine=='x86_64'",
     "torchvision>=0.15.0; platform_machine!='x86_64'",
     "numpy>=1.21.0,<2.0.0",
     "opencv-python>=4.8.0",
     "scikit-image>=0.21.0",
     "pillow>=9.0.0",
-    
+
     # FITS file handling
     "astropy>=5.0.0",
-    
+
     # Scientific computing
     "scipy>=1.9.0",
     "matplotlib>=3.5.0",
-    
+
     # CLI and utilities
     "click>=8.0.0",
     "tqdm>=4.64.0",
@@ -48,10 +48,16 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
-    "black>=22.0.0",
-    "flake8>=5.0.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0",
+    "black>=24.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.3.0",
+    "pre-commit>=3.0.0",
+    "safety>=3.0.0",
+    "bandit[toml]>=1.7.0",
+    "pydocstyle[toml]>=6.3.0",
+    "isort>=5.12.0",
+    "yamllint>=1.35.0",
 ]
 
 [project.scripts]
@@ -68,7 +74,47 @@ target-version = ['py39']
 [tool.ruff]
 line-length = 88
 target-version = "py39"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "EM", "EXE", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "NPY", "RUF"]
+ignore = [
+    # Assertions and debug prints (test files)
+    "S101", "T201",
+    # Magic values and string formatting
+    "PLR2004", "BLE001", "TRY003", "EM102", "G004", "TRY400",
+    # Code complexity (main/CLI functions can be complex)
+    "C901", "PLR0912", "PLR0915", "PLR0913",
+    # Type annotations (during migration)
+    "UP006", "UP035", "FBT001", "FBT002",
+    # Return statements and assignments
+    "RET504", "TRY300", "TRY301",
+    # Import style (relative imports in packages)
+    "TID252",
+    # Subprocess and execution
+    "S603", "EXE001",
+    # Variable overwriting in loops (common pattern)
+    "PLW2901",
+    # Unused arguments in test mocks
+    "ARG001", "ARG002",
+    # Test style preferences
+    "PT009", "PT027", "PT011",
+    # Error comparisons
+    "E712",
+    # Legacy numpy calls (external dependency)
+    "NPY002",
+    # Private member access in tests
+    "SLF001",
+    # Line length (black handles this)
+    "E501",
+    # File handling patterns
+    "PTH123",
+    # Datetime without timezone (internal use)
+    "DTZ005",
+    # Super() style
+    "UP008",
+    # Misc cleanup
+    "F841", "C414", "RUF001",
+]
 
 [tool.mypy]
 python_version = "3.9"
@@ -85,3 +131,16 @@ addopts = "--cov=nebulift --cov-report=term-missing --cov-report=html"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests", "test_*.py"]
+skips = ["B101", "B404", "B601", "B603"]  # Skip assert, subprocess in CLI
+
+[tool.pydocstyle]
+convention = "google"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["nebulift"]

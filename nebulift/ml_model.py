@@ -8,7 +8,7 @@ Optimized for CPU-only inference on resource-constrained devices like Raspberry 
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 import torch
@@ -27,14 +27,16 @@ logger = logging.getLogger(__name__)
 class AstroImageDataset(Dataset):
     """Dataset class for astronomical images with quality labels."""
 
-    def __init__(self,
-                 image_paths: List[str],
-                 labels: List[int],
-                 transform: Optional[transforms.Compose] = None,
-                 fits_processor: Optional['FITSProcessor'] = None) -> None:
+    def __init__(
+        self,
+        image_paths: list[str],
+        labels: list[int],
+        transform: Optional[transforms.Compose] = None,
+        fits_processor: Optional["FITSProcessor"] = None,
+    ) -> None:
         """
         Initialize dataset.
-        
+
         Args:
             image_paths: List of paths to image files
             labels: List of labels (0=contaminated, 1=clean)
@@ -51,7 +53,7 @@ class AstroImageDataset(Dataset):
     def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
         """Get a single item from the dataset."""
         image_path = self.image_paths[idx]
         label = self.labels[idx]
@@ -85,10 +87,12 @@ class AstroImageDataset(Dataset):
                 image_tensor = self.transform(image_pil)
             else:
                 # Default transform
-                transform = transforms.Compose([
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                ])
+                transform = transforms.Compose(
+                    [
+                        transforms.Resize((224, 224)),
+                        transforms.ToTensor(),
+                    ],
+                )
                 image_tensor = transform(image_pil)
 
             return image_tensor, label
@@ -103,13 +107,19 @@ class AstroImageDataset(Dataset):
 class AstroQualityClassifier(nn.Module):
     """ResNet18-based classifier for astrophotography quality assessment."""
 
-    def __init__(self, num_classes: int = 2, pretrained: bool = True):
+    def __init__(
+        self,
+        num_classes: int = 2,
+        pretrained: bool = True,
+        dropout_rate: float = 0.5,
+    ):
         """
         Initialize the classifier.
-        
+
         Args:
             num_classes: Number of output classes (2 for binary classification)
             pretrained: Whether to use pretrained ResNet18 weights
+            dropout_rate: Dropout rate for regularization
         """
         super(AstroQualityClassifier, self).__init__()
 
@@ -121,7 +131,7 @@ class AstroQualityClassifier(nn.Module):
         self.backbone.fc = nn.Linear(num_features, num_classes)
 
         # Add dropout for regularization
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the network."""
@@ -147,13 +157,15 @@ class AstroQualityClassifier(nn.Module):
 class ModelTrainer:
     """Handles training and evaluation of the astrophotography quality model."""
 
-    def __init__(self,
-                 model: AstroQualityClassifier,
-                 device: str = "cpu",
-                 learning_rate: float = 1e-4):
+    def __init__(
+        self,
+        model: AstroQualityClassifier,
+        device: str = "cpu",
+        learning_rate: float = 1e-4,
+    ):
         """
         Initialize the trainer.
-        
+
         Args:
             model: The model to train
             device: Device to train on ('cpu' or 'cuda')
@@ -165,8 +177,16 @@ class ModelTrainer:
 
         # Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
+        self.optimizer = optim.Adam(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=1e-5,
+        )
+        self.scheduler = optim.lr_scheduler.StepLR(
+            self.optimizer,
+            step_size=10,
+            gamma=0.1,
+        )
 
         # Training history
         self.train_losses: list[float] = []
@@ -174,7 +194,7 @@ class ModelTrainer:
         self.train_accuracies: list[float] = []
         self.val_accuracies: list[float] = []
 
-    def train_epoch(self, train_loader: DataLoader) -> Tuple[float, float]:
+    def train_epoch(self, train_loader: DataLoader) -> tuple[float, float]:
         """Train for one epoch."""
         self.model.train()
         total_loss = 0.0
@@ -205,11 +225,11 @@ class ModelTrainer:
                 logger.info(f"Train Batch: {batch_idx}, Loss: {loss.item():.6f}")
 
         avg_loss = total_loss / len(train_loader)
-        accuracy = 100. * correct / total
+        accuracy = 100.0 * correct / total
 
         return avg_loss, accuracy
 
-    def evaluate(self, val_loader: DataLoader) -> Tuple[float, float]:
+    def evaluate(self, val_loader: DataLoader) -> tuple[float, float]:
         """Evaluate the model on validation data."""
         self.model.eval()
         total_loss = 0.0
@@ -229,24 +249,26 @@ class ModelTrainer:
                 correct += (predicted == target).sum().item()
 
         avg_loss = total_loss / len(val_loader)
-        accuracy = 100. * correct / total
+        accuracy = 100.0 * correct / total
 
         return avg_loss, accuracy
 
-    def train(self,
-              train_loader: DataLoader,
-              val_loader: DataLoader,
-              epochs: int = 20,
-              save_path: Optional[str] = None) -> Dict[str, List[float]]:
+    def train(
+        self,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        epochs: int = 20,
+        save_path: Optional[str] = None,
+    ) -> dict[str, list[float]]:
         """
         Train the model for multiple epochs.
-        
+
         Args:
             train_loader: Training data loader
             val_loader: Validation data loader
             epochs: Number of epochs to train
             save_path: Path to save the best model
-            
+
         Returns:
             Dictionary containing training history
         """
@@ -277,8 +299,63 @@ class ModelTrainer:
             if val_acc > best_val_accuracy and save_path:
                 best_val_accuracy = val_acc
                 torch.save(self.model.state_dict(), save_path)
-                logger.info(f"Saved best model with validation accuracy: {val_acc:.2f}%")
+                logger.info(
+                    f"Saved best model with validation accuracy: {val_acc:.2f}%",
+                )
 
+        return {
+            "train_losses": self.train_losses,
+            "val_losses": self.val_losses,
+            "train_accuracies": self.train_accuracies,
+            "val_accuracies": self.val_accuracies,
+        }
+
+    def save_model(
+        self,
+        path: Union[str, Path],
+        include_metadata: bool = True,
+        include_training_state: bool = True,
+    ) -> None:
+        """
+        Save model with comprehensive metadata and training history.
+
+        Args:
+            path: Path to save the model
+            include_metadata: Whether to include training metadata
+            include_training_state: Whether to save optimizer/scheduler state
+        """
+        from .model_persistence import ModelCheckpoint
+
+        ModelCheckpoint.save_model(self, path, include_metadata, include_training_state)
+
+    @staticmethod
+    def load_model(
+        path: Union[str, Path],
+        device: str = "cpu",
+        load_training_state: bool = False,
+    ) -> "ModelTrainer":
+        """
+        Load model from saved checkpoint.
+
+        Args:
+            path: Path to saved model
+            device: Device to load model on
+            load_training_state: Whether to restore optimizer/scheduler state
+
+        Returns:
+            ModelTrainer instance with loaded model
+        """
+        from .model_persistence import ModelCheckpoint
+
+        return ModelCheckpoint.load_model(path, device, load_training_state)  # type: ignore[return-value]
+
+    def get_training_history(self) -> dict[str, list[float]]:
+        """
+        Get current training history.
+
+        Returns:
+            Dictionary with training metrics
+        """
         return {
             "train_losses": self.train_losses,
             "val_losses": self.val_losses,
@@ -293,7 +370,7 @@ class QualityPredictor:
     def __init__(self, model_path: str, device: str = "cpu"):
         """
         Initialize the predictor.
-        
+
         Args:
             model_path: Path to saved model weights
             device: Device for inference
@@ -305,21 +382,29 @@ class QualityPredictor:
         self.model.eval()
 
         # Define transforms for inference
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                               std=[0.229, 0.224, 0.225]),
-        ])
+        self.transform = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ],
+        )
 
-    def predict_single(self, image_path: str, fits_processor=None) -> Dict[str, float]:
+    def predict_single(
+        self,
+        image_path: str,
+        fits_processor=None,
+    ) -> dict[str, Union[float, bool, str]]:
         """
         Predict quality for a single image.
-        
+
         Args:
             image_path: Path to image file
             fits_processor: Optional FITSProcessor for FITS files
-            
+
         Returns:
             Dictionary with prediction results
         """
@@ -371,16 +456,20 @@ class QualityPredictor:
                 "clean_probability": 0.0,
                 "is_clean": False,
                 "error": str(e),
-            }
+            }  # type: ignore[dict-item]
 
-    def predict_batch(self, image_paths: List[str], fits_processor=None) -> Dict[str, Dict[str, float]]:
+    def predict_batch(
+        self,
+        image_paths: list[str],
+        fits_processor=None,
+    ) -> dict[str, dict[str, Union[float, bool, str]]]:
         """
         Predict quality for a batch of images.
-        
+
         Args:
             image_paths: List of image paths
             fits_processor: Optional FITSProcessor for FITS files
-            
+
         Returns:
             Dictionary mapping image paths to prediction results
         """
@@ -395,40 +484,47 @@ class QualityPredictor:
 def create_data_transforms(train: bool = True) -> transforms.Compose:
     """
     Create data transforms for training or validation.
-    
+
     Args:
         train: Whether this is for training (includes augmentation)
-        
+
     Returns:
         Composed transforms
     """
     if train:
-        return transforms.Compose([
-            transforms.Resize((256, 256)),
-            transforms.RandomCrop((224, 224)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.5),
-            transforms.RandomRotation(degrees=15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
+        return transforms.Compose(
+            [
+                transforms.Resize((256, 256)),
+                transforms.RandomCrop((224, 224)),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomVerticalFlip(p=0.5),
+                transforms.RandomRotation(degrees=15),
+                transforms.ColorJitter(brightness=0.2, contrast=0.2),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ],
+        )
+    return transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                               std=[0.229, 0.224, 0.225]),
-        ])
-    return transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                           std=[0.229, 0.224, 0.225]),
-    ])
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ],
+    )
 
 
-def optimize_model_for_inference(model: AstroQualityClassifier) -> AstroQualityClassifier:
+def optimize_model_for_inference(
+    model: AstroQualityClassifier,
+) -> AstroQualityClassifier:
     """
     Optimize model for inference on CPU/edge devices.
-    
+
     Args:
         model: Trained model
-        
+
     Returns:
         Optimized model
     """
@@ -437,7 +533,9 @@ def optimize_model_for_inference(model: AstroQualityClassifier) -> AstroQualityC
 
     # Apply quantization for CPU inference
     model_quantized = torch.quantization.quantize_dynamic(
-        model, {nn.Linear, nn.Conv2d}, dtype=torch.qint8,
+        model,
+        {nn.Linear, nn.Conv2d},
+        dtype=torch.qint8,
     )
 
-    return model_quantized
+    return model_quantized  # type: ignore[return-value,no-any-return]

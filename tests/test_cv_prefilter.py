@@ -143,8 +143,12 @@ class TestArtifactDetector:
         metrics = self.detector.calculate_image_quality_metrics(image)
 
         required_metrics = [
-            "sharpness", "contrast", "noise_estimate",
-            "snr_estimate", "estimated_star_count", "star_density",
+            "sharpness",
+            "contrast",
+            "noise_estimate",
+            "snr_estimate",
+            "estimated_star_count",
+            "star_density",
         ]
 
         for metric in required_metrics:
@@ -167,8 +171,13 @@ class TestArtifactDetector:
 
         # Check all analysis components are present
         required_keys = [
-            "streaks", "clouds", "saturation", "hot_pixels",
-            "quality_metrics", "overall_quality_score", "needs_manual_review",
+            "streaks",
+            "clouds",
+            "saturation",
+            "hot_pixels",
+            "quality_metrics",
+            "overall_quality_score",
+            "needs_manual_review",
         ]
 
         for key in required_keys:
@@ -183,7 +192,12 @@ class TestArtifactDetector:
         cloud_coverage=st.floats(min_value=0, max_value=20),
         saturation_level=st.floats(min_value=0, max_value=5),
     )
-    def test_quality_score_calculation(self, streak_count, cloud_coverage, saturation_level):
+    def test_quality_score_calculation(
+        self,
+        streak_count,
+        cloud_coverage,
+        saturation_level,
+    ):
         """Property-based test for quality score calculation."""
         # Mock analysis results
         analysis_results = {
@@ -285,7 +299,7 @@ class TestBatchProcessing:
         mock_imread.side_effect = [
             np.random.random((100, 100)) * 255,  # Success
             None,  # Failure
-            np.random.random((100, 100)) * 255,   # Success
+            np.random.random((100, 100)) * 255,  # Success
         ]
 
         image_paths = ["good1.jpg", "bad.jpg", "good2.jpg"]
@@ -310,7 +324,8 @@ class TestBatchProcessing:
         }
 
         good_images, poor_images = filter_images_by_quality(
-            analysis_results, quality_threshold=0.6,
+            analysis_results,
+            quality_threshold=0.6,
         )
 
         assert len(good_images) == 3  # 0.8, 0.9, 0.6

@@ -7,7 +7,7 @@ for machine learning quality assessment.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -20,23 +20,23 @@ logger = logging.getLogger(__name__)
 class FITSProcessor:
     """Processes FITS astronomical images for quality assessment."""
 
-    def __init__(self, target_size: Tuple[int, int] = (224, 224)):
+    def __init__(self, target_size: tuple[int, int] = (224, 224)):
         """
         Initialize FITS processor.
-        
+
         Args:
             target_size: Target image size for ML processing (width, height)
         """
         self.target_size = target_size
         self.stats_cache: dict[str, dict[str, float]] = {}
 
-    def load_fits_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def load_fits_file(self, file_path: Path) -> Optional[dict[str, Any]]:
         """
         Load a FITS file and extract image data with metadata.
-        
+
         Args:
             file_path: Path to FITS file
-            
+
         Returns:
             Dictionary containing image data and metadata, or None if failed
         """
@@ -68,20 +68,22 @@ class FITSProcessor:
             logger.error(f"Failed to load FITS file {file_path}: {e}")
             return None
 
-    def _extract_metadata(self, header: fits.Header) -> Dict[str, Any]:
+    def _extract_metadata(self, header: fits.Header) -> dict[str, Any]:
         """Extract relevant metadata from FITS header."""
         metadata = {}
 
         # Standard FITS keywords
         standard_keys = [
-            "EXPTIME", "EXPOSURE",  # Exposure time
-            "GAIN",                 # Camera gain
-            "TEMP", "CCD-TEMP",    # CCD temperature
-            "FILTER",              # Filter used
-            "OBJECT",              # Target object
-            "DATE-OBS",            # Observation date
-            "TELESCOP",            # Telescope
-            "INSTRUME",            # Instrument
+            "EXPTIME",
+            "EXPOSURE",  # Exposure time
+            "GAIN",  # Camera gain
+            "TEMP",
+            "CCD-TEMP",  # CCD temperature
+            "FILTER",  # Filter used
+            "OBJECT",  # Target object
+            "DATE-OBS",  # Observation date
+            "TELESCOP",  # Telescope
+            "INSTRUME",  # Instrument
         ]
 
         for key in standard_keys:
@@ -95,15 +97,18 @@ class FITSProcessor:
 
         return metadata
 
-    def normalize_image(self, image_data: np.ndarray,
-                       method: str = "percentile") -> np.ndarray:
+    def normalize_image(
+        self,
+        image_data: np.ndarray,
+        method: str = "percentile",
+    ) -> np.ndarray:
         """
         Normalize image data for consistent processing.
-        
+
         Args:
             image_data: Raw image data
             method: Normalization method ('percentile', 'sigma_clip', 'minmax')
-            
+
         Returns:
             Normalized image data in range [0, 1]
         """
@@ -138,10 +143,10 @@ class FITSProcessor:
     def resize_for_ml(self, image_data: np.ndarray) -> np.ndarray:
         """
         Resize image for machine learning processing.
-        
+
         Args:
             image_data: Normalized image data
-            
+
         Returns:
             Resized image as numpy array
         """
@@ -149,19 +154,22 @@ class FITSProcessor:
         image_uint8 = (image_data * 255).astype(np.uint8)
 
         # Resize using OpenCV with anti-aliasing
-        resized = cv2.resize(image_uint8, self.target_size,
-                           interpolation=cv2.INTER_AREA)
+        resized = cv2.resize(
+            image_uint8,
+            self.target_size,
+            interpolation=cv2.INTER_AREA,
+        )
 
         # Convert back to float32 for ML
         return resized.astype(np.float32) / 255.0
 
-    def compute_image_stats(self, image_data: np.ndarray) -> Dict[str, float]:
+    def compute_image_stats(self, image_data: np.ndarray) -> dict[str, float]:
         """
         Compute statistical properties of the image.
-        
+
         Args:
             image_data: Image data array
-            
+
         Returns:
             Dictionary of image statistics
         """
@@ -176,19 +184,20 @@ class FITSProcessor:
             "max": float(np.max(image_data)),
             "p01": float(np.percentile(image_data, 1)),
             "p99": float(np.percentile(image_data, 99)),
-            "dynamic_range": float(np.percentile(image_data, 99) -
-                                 np.percentile(image_data, 1)),
+            "dynamic_range": float(
+                np.percentile(image_data, 99) - np.percentile(image_data, 1),
+            ),
         }
 
         return stats
 
-    def process_fits_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def process_fits_file(self, file_path: Path) -> Optional[dict[str, Any]]:
         """
         Complete processing pipeline for a FITS file.
-        
+
         Args:
             file_path: Path to FITS file
-            
+
         Returns:
             Processed image data and metadata
         """
@@ -221,10 +230,10 @@ class FITSProcessor:
 def validate_fits_file(file_path: Path) -> bool:
     """
     Quick validation of FITS file without full loading.
-    
+
     Args:
         file_path: Path to FITS file
-        
+
     Returns:
         True if file appears to be a valid FITS file
     """
@@ -242,10 +251,10 @@ def validate_fits_file(file_path: Path) -> bool:
 def batch_validate_fits_files(directory: Path) -> Tuple[list, list]:
     """
     Validate all FITS files in a directory.
-    
+
     Args:
         directory: Directory containing FITS files
-        
+
     Returns:
         Tuple of (valid_files, invalid_files)
     """

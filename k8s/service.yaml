@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nebulift-training-headless
+  labels:
+    app: nebulift-training
+spec:
+  clusterIP: None  # Headless service for distributed training
+  selector:
+    app: nebulift-training
+  ports:
+    - name: training
+      port: 29500  # Default PyTorch distributed port
+      targetPort: 29500
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nebulift-training-coordinator
+  labels:
+    app: nebulift-training
+spec:
+  selector:
+    app: nebulift-training
+    role: coordinator
+  ports:
+    - name: coordinator
+      port: 29500
+      targetPort: 29500
+  type: ClusterIP

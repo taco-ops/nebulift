@@ -1,0 +1,141 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nebulift-training
+  labels:
+    app: nebulift-training
+spec:
+  parallelism: 4  # Number of training pods (adjust for RPi5 cluster size)
+  completions: 4
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: nebulift-training
+    spec:
+      restartPolicy: Never
+
+      # Use node affinity to distribute across RPi5 nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - nebulift-training
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: nebulift-trainer
+          image: nebulift:latest  # Build image with: docker build -t nebulift .
+          imagePullPolicy: IfNotPresent
+
+          command: ["python", "-m", "nebulift.distributed.k8s_trainer"]
+
+          env:
+            # Distributed training environment
+            - name: WORLD_SIZE
+              value: "4"  # Total number of processes
+            - name: RANK
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            - name: MASTER_ADDR
+              value: "nebulift-training-coordinator"
+            - name: MASTER_PORT
+              value: "29500"
+
+        # Training configuration from ConfigMap
+        - name: LEARNING_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: learning_rate
+        - name: BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: batch_size
+        - name: EPOCHS
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: epochs
+        - name: TRAIN_DATA_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: train_data_path
+        - name: VAL_DATA_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: val_data_path
+        - name: MODEL_OUTPUT_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: nebulift-training-config
+              key: model_output_path
+
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+
+          volumeMounts:
+            - name: training-data
+              mountPath: /data
+              readOnly: true
+            - name: model-storage
+              mountPath: /models
+            - name: local-cache
+              mountPath: /tmp/cache
+
+          # Health checks
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import psutil; exit(0 if any('python' in p.name() for p in psutil.process_iter()) else 1)"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import torch; print('PyTorch ready')"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+      volumes:
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: nebulift-training-data
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: nebulift-models
+        - name: local-cache
+          persistentVolumeClaim:
+            claimName: nebulift-local-cache
+
+      # Tolerations for RPi5 nodes
+      tolerations:
+        - key: "node.kubernetes.io/arch"
+          operator: "Equal"
+          value: "arm64"
+          effect: "NoSchedule"
+        - key: "kubernetes.io/arch"
+          operator: "Equal"
+          value: "arm64"
+          effect: "NoSchedule"

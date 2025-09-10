@@ -129,7 +129,10 @@ class TestFITSProcessor:
         image_data[50:55, 50:55] = 10000  # Add some outliers
 
         # Test percentile normalization
-        norm_percentile = self.processor.normalize_image(image_data, method="percentile")
+        norm_percentile = self.processor.normalize_image(
+            image_data,
+            method="percentile",
+        )
         assert 0 <= norm_percentile.min() <= norm_percentile.max() <= 1
 
         # Test sigma clip normalization
@@ -162,13 +165,28 @@ class TestFITSProcessor:
 
         stats = self.processor.compute_image_stats(image_data)
 
-        required_keys = ["mean", "std", "median", "min", "max", "p01", "p99", "dynamic_range"]
+        required_keys = [
+            "mean",
+            "std",
+            "median",
+            "min",
+            "max",
+            "p01",
+            "p99",
+            "dynamic_range",
+        ]
         for key in required_keys:
             assert key in stats
             assert isinstance(stats[key], float)
 
         # Check logical relationships
-        assert stats["min"] <= stats["p01"] <= stats["median"] <= stats["p99"] <= stats["max"]
+        assert (
+            stats["min"]
+            <= stats["p01"]
+            <= stats["median"]
+            <= stats["p99"]
+            <= stats["max"]
+        )
         assert stats["dynamic_range"] == stats["p99"] - stats["p01"]
 
     @patch("nebulift.fits_processor.FITSProcessor.load_fits_file")
@@ -268,7 +286,7 @@ class TestIntegration:
         processor = FITSProcessor()
         assert processor.target_size == (224, 224)
 
-    @pytest.mark.slow
+    @pytest.mark.slow()
     def test_memory_usage_large_batch(self):
         """Test memory usage with large batch of images."""
         # This test would process many images to check memory efficiency

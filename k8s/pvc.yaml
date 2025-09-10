@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-training-data
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteMany  # Shared across pods
+  storageClassName: nfs  # Assuming NFS storage for RPi5 cluster
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-models
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteMany  # Shared model storage
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Optional: Local storage for faster I/O on each node
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-local-cache
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteOnce  # Per-node local storage
+  storageClassName: local-path  # Assuming local-path provisioner
+  resources:
+    requests:
+      storage: 20Gi

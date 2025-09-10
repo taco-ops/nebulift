@@ -77,7 +77,8 @@ class TestAstroImageDataset:
         mock_transform.return_value = torch.zeros((3, 224, 224))
 
         dataset = AstroImageDataset(
-            ["test.fits"], [0],
+            ["test.fits"],
+            [0],
             transform=mock_transform,
             fits_processor=mock_processor,
         )
@@ -107,7 +108,10 @@ class TestAstroQualityClassifier:
         model = AstroQualityClassifier(num_classes=2, pretrained=True)
 
         assert isinstance(model, nn.Module)
-        assert isinstance(model.backbone, torch.nn.modules.container.Sequential) or hasattr(model.backbone, "fc")
+        assert isinstance(
+            model.backbone,
+            torch.nn.modules.container.Sequential,
+        ) or hasattr(model.backbone, "fc")
         assert hasattr(model, "dropout")
 
     def test_init_not_pretrained(self):
@@ -157,9 +161,17 @@ class TestModelTrainer:
     def test_train_epoch(self):
         """Test training for one epoch."""
         # Create dummy data loader
-        dataset = [(torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item()) for _ in range(10)]
-        data_loader = [(torch.stack([item[0] for item in dataset[:2]]),
-                       torch.tensor([item[1] for item in dataset[:2]])) for _ in range(5)]
+        dataset = [
+            (torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item())
+            for _ in range(10)
+        ]
+        data_loader = [
+            (
+                torch.stack([item[0] for item in dataset[:2]]),
+                torch.tensor([item[1] for item in dataset[:2]]),
+            )
+            for _ in range(5)
+        ]
 
         loss, accuracy = self.trainer.train_epoch(data_loader)
 
@@ -170,9 +182,17 @@ class TestModelTrainer:
     def test_evaluate(self):
         """Test model evaluation."""
         # Create dummy data loader
-        dataset = [(torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item()) for _ in range(10)]
-        data_loader = [(torch.stack([item[0] for item in dataset[:2]]),
-                       torch.tensor([item[1] for item in dataset[:2]])) for _ in range(5)]
+        dataset = [
+            (torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item())
+            for _ in range(10)
+        ]
+        data_loader = [
+            (
+                torch.stack([item[0] for item in dataset[:2]]),
+                torch.tensor([item[1] for item in dataset[:2]]),
+            )
+            for _ in range(5)
+        ]
 
         loss, accuracy = self.trainer.evaluate(data_loader)
 
@@ -201,7 +221,12 @@ class TestQualityPredictor:
     @patch("nebulift.ml_model.torch.load")
     @patch.object(AstroQualityClassifier, "load_state_dict")
     @patch("nebulift.ml_model.Image.open")
-    def test_predict_single_regular_image(self, mock_image_open, mock_load_state_dict, mock_torch_load):
+    def test_predict_single_regular_image(
+        self,
+        mock_image_open,
+        mock_load_state_dict,
+        mock_torch_load,
+    ):
         """Test single image prediction with regular image."""
         # Mock model loading
         mock_torch_load.return_value = {}
