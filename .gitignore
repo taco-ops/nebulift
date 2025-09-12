@@ -184,3 +184,6 @@ src/
 
 # UV lock file (keep for reproducibility)
 # uv.lock
+
+# local documentation
+local-docs/
