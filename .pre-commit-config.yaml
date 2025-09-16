@@ -11,11 +11,11 @@ repos:
         language_version: python3.12
         args: [--line-length=88]
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.3.2
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
     hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+      - id: flake8
+        additional_dependencies: [flake8-docstrings, flake8-import-order]
 
   # Import sorting
   - repo: https://github.com/pycqa/isort
@@ -104,7 +104,6 @@ repos:
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
-        args: [--strict, --force-scope]
 
 ci:
   autofix_commit_msg: |

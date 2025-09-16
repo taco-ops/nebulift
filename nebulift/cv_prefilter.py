@@ -18,9 +18,6 @@ from skimage import filters, morphology
 if TYPE_CHECKING:
     from .fits_processor import FITSProcessor
 
-if TYPE_CHECKING:
-    from .fits_processor import FITSProcessor
-
 logger = logging.getLogger(__name__)
 
 

@@ -48,15 +48,25 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
+    "pre-commit>=3.0.0",
+
+    # Linting and formatting
     "black>=24.0.0",
     "flake8>=6.0.0",
+    "flake8-docstrings>=1.7.0",
+    "flake8-import-order>=0.18.0",
     "mypy>=1.8.0",
-    "ruff>=0.3.0",
-    "pre-commit>=3.0.0",
-    "safety>=3.0.0",
+    "isort>=5.13.0",
+
+    # Security and documentation
     "bandit[toml]>=1.7.0",
-    "pydocstyle[toml]>=6.3.0",
-    "isort>=5.12.0",
+    "pydocstyle>=6.3.0",
+
+    # Build and validation
+    "build>=1.0.0",
+    "twine>=4.0.0",
+
+    # Testing infrastructure
     "yamllint>=1.35.0",
 ]
 
@@ -70,51 +80,6 @@ build-backend = "hatchling.build"
 [tool.black]
 line-length = 88
 target-version = ['py39']
-
-[tool.ruff]
-line-length = 88
-target-version = "py39"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "EM", "EXE", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "NPY", "RUF"]
-ignore = [
-    # Assertions and debug prints (test files)
-    "S101", "T201",
-    # Magic values and string formatting
-    "PLR2004", "BLE001", "TRY003", "EM102", "G004", "TRY400",
-    # Code complexity (main/CLI functions can be complex)
-    "C901", "PLR0912", "PLR0915", "PLR0913",
-    # Type annotations (during migration)
-    "UP006", "UP035", "FBT001", "FBT002",
-    # Return statements and assignments
-    "RET504", "TRY300", "TRY301",
-    # Import style (relative imports in packages)
-    "TID252",
-    # Subprocess and execution
-    "S603", "EXE001",
-    # Variable overwriting in loops (common pattern)
-    "PLW2901",
-    # Unused arguments in test mocks
-    "ARG001", "ARG002",
-    # Test style preferences
-    "PT009", "PT027", "PT011",
-    # Error comparisons
-    "E712",
-    # Legacy numpy calls (external dependency)
-    "NPY002",
-    # Private member access in tests
-    "SLF001",
-    # Line length (black handles this)
-    "E501",
-    # File handling patterns
-    "PTH123",
-    # Datetime without timezone (internal use)
-    "DTZ005",
-    # Super() style
-    "UP008",
-    # Misc cleanup
-    "F841", "C414", "RUF001",
-]
 
 [tool.mypy]
 python_version = "3.9"

@@ -23,7 +23,7 @@ from nebulift.cv_prefilter import ArtifactDetector
 from nebulift.fits_processor import FITSProcessor
 
 from .cv_prefilter import batch_analyze_images
-from .ml_model import AstroQualityClassifier, ModelTrainer
+from .ml_model import AstroQualityClassifier
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -115,7 +115,7 @@ def train_model(data_dir: Path, model_output: Path, epochs: int = 50) -> None:
 
     # Create model and trainer
     model = AstroQualityClassifier(num_classes=2, pretrained=True)
-    trainer = ModelTrainer(model)
+    # trainer = ModelTrainer(model)  # TODO: Implement full training pipeline
 
     # This is a simplified placeholder - would need proper dataset creation
     print("Note: This CLI function needs proper dataset implementation")

@@ -286,7 +286,7 @@ class TestIntegration:
         processor = FITSProcessor()
         assert processor.target_size == (224, 224)
 
-    @pytest.mark.slow()
+    @pytest.mark.slow
     def test_memory_usage_large_batch(self):
         """Test memory usage with large batch of images."""
         # This test would process many images to check memory efficiency
