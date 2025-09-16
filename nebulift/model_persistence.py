@@ -42,7 +42,7 @@ class ModelCheckpoint:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # Prepare model state dict
-        model_data = {
+        model_data: Dict[str, Any] = {
             "model_state_dict": trainer.model.state_dict(),
             "model_class": trainer.model.__class__.__name__,
             "model_config": {

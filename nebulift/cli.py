@@ -189,7 +189,7 @@ def validate_system() -> None:
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Nebulift: Astrophotography Quality Assessment",

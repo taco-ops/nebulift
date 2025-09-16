@@ -7,12 +7,15 @@ Raspberry Pi 5 nodes in a Kubernetes cluster using CPU-only PyTorch.
 
 import logging
 import os
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
+
+if TYPE_CHECKING:
+    from ..ml_model import AstroQualityClassifier
 
 from ..ml_model import ModelTrainer
 
@@ -24,7 +27,7 @@ class K8sDistributedTrainer(ModelTrainer):
 
     def __init__(
         self,
-        model,
+        model: "AstroQualityClassifier",
         learning_rate: float = 0.001,
         backend: str = "gloo",  # CPU-only backend
         master_addr: Optional[str] = None,
@@ -73,10 +76,10 @@ class K8sDistributedTrainer(ModelTrainer):
 
         # Wrap model for distributed training
         if self.world_size > 1:
-            self.model = DistributedDataParallel(
+            self.model = DistributedDataParallel(  # type: ignore[assignment]
                 self.model,
                 device_ids=None,
-                output_device=None,  # CPU-only  # CPU-only
+                output_device=None,  # CPU-only
             )
             logger.info("Model wrapped with DistributedDataParallel")
 
@@ -96,13 +99,13 @@ class K8sDistributedTrainer(ModelTrainer):
 
         return super().train_epoch(train_loader)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Clean up distributed training resources."""
         if self.world_size > 1 and dist.is_initialized():
             logger.info("Cleaning up distributed process group")
             dist.destroy_process_group()
 
-    def save_checkpoint(self, filepath: str, epoch: int, best_loss: float):
+    def save_checkpoint(self, filepath: str, epoch: int, best_loss: float) -> None:
         """
         Save model checkpoint (only on rank 0 to avoid conflicts).
 

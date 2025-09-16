@@ -8,10 +8,13 @@ parallel training on Raspberry Pi 5 clusters.
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import torch
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, Sampler
+
+if TYPE_CHECKING:
+    from ..fits_processor import FITSProcessor
 
 from ..ml_model import AstroImageDataset, create_data_transforms
 
@@ -25,7 +28,7 @@ def create_distributed_dataloaders(
     val_split: float = 0.2,
     rank: int = 0,
     world_size: int = 1,
-    fits_processor=None,
+    fits_processor: Optional["FITSProcessor"] = None,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Create distributed data loaders for training across K8s nodes.
@@ -77,7 +80,7 @@ def create_distributed_dataloaders(
     )
 
     # Create distributed samplers
-    train_sampler = (
+    train_sampler: Optional[Sampler] = (
         DistributedSampler(
             train_dataset,
             num_replicas=world_size,
@@ -88,7 +91,7 @@ def create_distributed_dataloaders(
         else None
     )
 
-    val_sampler = (
+    val_sampler: Optional[Sampler] = (
         DistributedSampler(
             val_dataset,
             num_replicas=world_size,

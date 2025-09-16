@@ -396,7 +396,7 @@ class QualityPredictor:
     def predict_single(
         self,
         image_path: str,
-        fits_processor=None,
+        fits_processor: Optional["FITSProcessor"] = None,
     ) -> dict[str, Union[float, bool, str]]:
         """
         Predict quality for a single image.
@@ -461,7 +461,7 @@ class QualityPredictor:
     def predict_batch(
         self,
         image_paths: list[str],
-        fits_processor=None,
+        fits_processor: Optional["FITSProcessor"] = None,
     ) -> dict[str, dict[str, Union[float, bool, str]]]:
         """
         Predict quality for a batch of images.

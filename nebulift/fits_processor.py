@@ -138,7 +138,7 @@ class FITSProcessor:
         else:
             raise ValueError(f"Unknown normalization method: {method}")
 
-        return normalized
+        return np.asarray(normalized)
 
     def resize_for_ml(self, image_data: np.ndarray) -> np.ndarray:
         """
@@ -161,7 +161,7 @@ class FITSProcessor:
         )
 
         # Convert back to float32 for ML
-        return resized.astype(np.float32) / 255.0
+        return np.asarray(resized.astype(np.float32) / 255.0)
 
     def compute_image_stats(self, image_data: np.ndarray) -> dict[str, float]:
         """

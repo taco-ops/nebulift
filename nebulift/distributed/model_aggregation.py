@@ -6,15 +6,19 @@ nodes during distributed training.
 """
 
 import logging
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 import torch
 import torch.distributed as dist
+from torch import nn
+
+if TYPE_CHECKING:
+    from .k8s_trainer import K8sDistributedTrainer
 
 logger = logging.getLogger(__name__)
 
 
-def aggregate_model_updates(model, world_size: int) -> None:
+def aggregate_model_updates(model: nn.Module, world_size: int) -> None:
     """
     Aggregate model parameters across all nodes using all-reduce.
 
@@ -73,7 +77,7 @@ def collect_metrics_from_all_nodes(
     return aggregated_metrics
 
 
-def broadcast_model_state(model, src_rank: int = 0) -> None:
+def broadcast_model_state(model: nn.Module, src_rank: int = 0) -> None:
     """
     Broadcast model state from source rank to all other nodes.
 
@@ -88,7 +92,7 @@ def broadcast_model_state(model, src_rank: int = 0) -> None:
 
 
 def synchronize_training_state(
-    trainer,
+    trainer: "K8sDistributedTrainer",
     epoch: int,
     best_loss: float,
     world_size: int,
