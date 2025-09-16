@@ -516,26 +516,29 @@ def create_data_transforms(train: bool = True) -> transforms.Compose:
     )
 
 
-def optimize_model_for_inference(
-    model: AstroQualityClassifier,
-) -> AstroQualityClassifier:
+def optimize_model_for_inference(model: nn.Module) -> nn.Module:
     """
-    Optimize model for inference on CPU/edge devices.
+    Optimize a PyTorch model for inference.
 
     Args:
-        model: Trained model
+        model: PyTorch model to optimize
 
     Returns:
-        Optimized model
+        Optimized model for faster inference
     """
     # Set to evaluation mode
     model.eval()
 
-    # Apply quantization for CPU inference
-    model_quantized = torch.quantization.quantize_dynamic(
-        model,
-        {nn.Linear, nn.Conv2d},
-        dtype=torch.qint8,
-    )
-
-    return model_quantized  # type: ignore[return-value,no-any-return]
+    # Apply quantization for CPU inference (with error handling for compatibility)
+    try:
+        model_quantized = torch.quantization.quantize_dynamic(
+            model,
+            {nn.Linear, nn.Conv2d},
+            dtype=torch.qint8,
+        )
+        return model_quantized  # type: ignore[return-value,no-any-return]
+    except (RuntimeError, AttributeError) as e:
+        # Fallback for environments where quantization is not supported
+        # (e.g., some PyTorch builds, certain platforms)
+        print(f"Warning: Quantization not available ({e}), returning original model")
+        return model

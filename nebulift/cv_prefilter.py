@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 import cv2
 import numpy as np
 from scipy import ndimage
+from scipy.ndimage import maximum_filter
 from skimage import filters, morphology
+
+if TYPE_CHECKING:
+    from .fits_processor import FITSProcessor
 
 if TYPE_CHECKING:
     from .fits_processor import FITSProcessor
@@ -230,8 +234,6 @@ class ArtifactDetector:
         enhanced = ndimage.convolve(image, star_kernel)
 
         # Find local maxima
-        from scipy.ndimage import maximum_filter
-
         local_maxima = (enhanced == maximum_filter(enhanced, size=5)) & (enhanced > 0.5)
         star_count = np.sum(local_maxima)
 
@@ -342,10 +344,8 @@ class ArtifactDetector:
         if analysis_results["clouds"]["cloud_coverage_percent"] > 5.0:
             return True
 
-        if 0.3 < analysis_results["overall_quality_score"] < 0.7:
-            return True
-
-        return False
+        score = float(analysis_results["overall_quality_score"])
+        return 0.3 < score < 0.7
 
 
 def batch_analyze_images(
@@ -364,15 +364,11 @@ def batch_analyze_images(
     Returns:
         Dictionary mapping file paths to analysis results
     """
-    from typing import TYPE_CHECKING
-
-    if TYPE_CHECKING:
-        from .fits_processor import FITSProcessor
-
     if detector is None:
         detector = ArtifactDetector()
 
     if fits_processor is None:
+        # Import here to avoid circular imports
         from .fits_processor import FITSProcessor
 
         fits_processor = FITSProcessor()

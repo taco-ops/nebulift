@@ -14,6 +14,6 @@ from .model_aggregation import aggregate_model_updates
 
 __all__ = [
     "K8sDistributedTrainer",
-    "create_distributed_dataloaders",
     "aggregate_model_updates",
+    "create_distributed_dataloaders",
 ]

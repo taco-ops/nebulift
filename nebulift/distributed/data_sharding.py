@@ -6,6 +6,7 @@ parallel training on Raspberry Pi 5 clusters.
 """
 
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import List, Tuple
 
@@ -170,8 +171,6 @@ def balance_dataset_across_nodes(
     Returns:
         Tuple of (balanced_paths, balanced_labels)
     """
-    from collections import defaultdict
-
     # Group by class
     class_groups = defaultdict(list)
     for path, label in zip(image_paths, labels):

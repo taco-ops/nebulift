@@ -41,9 +41,9 @@ class K8sDistributedTrainer(ModelTrainer):
             master_port: Master node port (from K8s env if None)
         """
         # Get distributed training info from Kubernetes environment
-        self.rank = int(os.environ.get("RANK", 0))
-        self.local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        self.world_size = int(os.environ.get("WORLD_SIZE", 1))
+        self.rank = int(os.environ.get("RANK", "0"))
+        self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
         # Set master node info for distributed coordination
         if master_addr is None:

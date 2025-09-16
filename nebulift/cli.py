@@ -14,12 +14,16 @@ Usage:
 import argparse
 import logging
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 from nebulift.cv_prefilter import ArtifactDetector
 from nebulift.fits_processor import FITSProcessor
+
+from .cv_prefilter import batch_analyze_images
+from .ml_model import AstroQualityClassifier, ModelTrainer
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -79,8 +83,6 @@ def batch_process(input_dir: Path, output_dir: Path) -> None:
     print(f"Processing {len(fits_files)} FITS files...")
 
     # Batch analyze
-    from .cv_prefilter import batch_analyze_images
-
     results = batch_analyze_images([str(f) for f in fits_files], detector)
 
     # Sort files by quality
@@ -109,8 +111,6 @@ def batch_process(input_dir: Path, output_dir: Path) -> None:
 
 def train_model(data_dir: Path, model_output: Path, epochs: int = 50) -> None:
     """Train the ML model locally."""
-    from nebulift.ml_model import AstroQualityClassifier, ModelTrainer
-
     print(f"Training model on data from {data_dir}")
 
     # Create model and trainer
@@ -168,9 +168,7 @@ def validate_system() -> None:
     print("Running Nebulift system validation...")
 
     try:
-        # Import and run validation
-        import subprocess
-
+        # Run validation
         result = subprocess.run(
             [sys.executable, "validate_system.py"],
             capture_output=True,
