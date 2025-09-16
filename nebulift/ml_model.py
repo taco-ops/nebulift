@@ -375,9 +375,39 @@ class QualityPredictor:
             model_path: Path to saved model weights
             device: Device for inference
         """
+        from .model_persistence import ModelCheckpoint
+
         self.device = device
-        self.model = AstroQualityClassifier(num_classes=2, pretrained=False)
-        self.model.load_state_dict(torch.load(model_path, map_location=device))
+
+        # Use ModelCheckpoint for proper loading
+        try:
+            self.model = ModelCheckpoint.load_model_for_inference(model_path, device)
+        except Exception as e:
+            # Fallback for legacy formats
+            try:
+                checkpoint = torch.load(model_path, map_location=device)
+                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                    # New format with metadata
+                    config = checkpoint.get("model_config", {})
+                    self.model = AstroQualityClassifier(
+                        num_classes=config.get("num_classes", 2),
+                        dropout_rate=config.get("dropout_rate", 0.2),
+                        pretrained=False,
+                    )
+                    self.model.load_state_dict(checkpoint["model_state_dict"])
+                else:
+                    # Old format - direct state dict
+                    self.model = AstroQualityClassifier(num_classes=2, pretrained=False)
+                    self.model.load_state_dict(checkpoint)
+
+                self.model.to(device)
+                self.model.eval()
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"Failed to load model from {model_path}: {e}. Fallback also failed: {fallback_error}"
+                )
+
+        # Ensure model is on correct device and in eval mode
         self.model.to(device)
         self.model.eval()
 
