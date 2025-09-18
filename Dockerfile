@@ -1,5 +1,5 @@
-# Dockerfile for Nebulift Training - Multi-stage build for optimization
-FROM python:3.12-slim-bookworm AS builder
+# Dockerfile for Nebulift Training - Simplified build for reliability
+FROM python:3.12-slim-bookworm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -15,32 +15,12 @@ RUN pip install --no-cache-dir uv
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
-
-# Copy README.md as it's required by pyproject.toml for package building
-COPY README.md ./
-
-# Install dependencies (this layer will be cached if dependencies don't change)
-RUN uv sync --frozen --no-dev
-
-# Production stage
-FROM python:3.12-slim-bookworm AS runtime
-
-# Install minimal runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-WORKDIR /app
-
-# Copy the virtual environment from builder stage
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy application code
+# Copy all necessary files for package building
+COPY pyproject.toml uv.lock README.md ./
 COPY nebulift/ ./nebulift/
-COPY README.md ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
 
 # Create non-root user for security
 RUN useradd -m -u 1000 nebulift && chown -R nebulift:nebulift /app
