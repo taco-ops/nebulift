@@ -365,7 +365,9 @@ jobs:
 
             echo "✅ Single-platform image created: $tag (amd64 only)"
           fi
-        done  security-scan:
+        done
+
+  security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
