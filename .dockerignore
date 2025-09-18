@@ -58,7 +58,7 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# Documentation
+# Documentation (but keep README.md for package metadata)
 docs/
 *.md
 !README.md
