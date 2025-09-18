@@ -19,8 +19,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY nebulift/ ./nebulift/
 
-# Install dependencies
-RUN uv sync --frozen --no-dev
+# Install dependencies with CPU-only PyTorch to reduce image size from 16GB to ~2GB
+RUN uv sync --frozen --no-dev --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Create non-root user for security
 RUN useradd -m -u 1000 nebulift && chown -R nebulift:nebulift /app

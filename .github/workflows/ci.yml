@@ -168,6 +168,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test-container]
     if: github.ref == 'refs/heads/main'
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
 
     steps:
     - uses: actions/checkout@v4
@@ -197,12 +200,13 @@ jobs:
 
     - name: Build and push AMD64 container image
       if: github.event_name != 'pull_request'
+      id: build
       uses: docker/build-push-action@v5
       with:
         context: .
         platforms: linux/amd64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
+        tags: ${{ steps.meta.outputs.tags }}-amd64
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,key=amd64
         cache-to: type=gha,mode=max,key=amd64
@@ -213,6 +217,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test-container]
     if: github.ref == 'refs/heads/main'
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
 
     steps:
     - uses: actions/checkout@v4
@@ -242,6 +249,7 @@ jobs:
 
     - name: Build and push ARM64 container image
       if: github.event_name != 'pull_request'
+      id: build
       uses: docker/build-push-action@v5
       timeout-minutes: 45
       continue-on-error: true
@@ -249,7 +257,7 @@ jobs:
         context: .
         platforms: linux/arm64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
+        tags: ${{ steps.meta.outputs.tags }}-arm64
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,key=arm64
         cache-to: type=gha,mode=max,key=arm64
@@ -283,10 +291,13 @@ jobs:
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Check build results and create manifest
+    - name: Create and push multi-architecture manifest
       run: |
         echo "AMD64 build result: ${{ needs.build-amd64.result }}"
         echo "ARM64 build result: ${{ needs.build-arm64.result }}"
+
+        # Parse tags from metadata step
+        TAGS="${{ steps.meta.outputs.tags }}"
 
         if [[ "${{ needs.build-amd64.result }}" == "success" ]]; then
           echo "✅ AMD64 build successful"
@@ -294,6 +305,7 @@ jobs:
         else
           echo "❌ AMD64 build failed"
           AMD64_SUCCESS=false
+          exit 1  # AMD64 is required
         fi
 
         if [[ "${{ needs.build-arm64.result }}" == "success" ]]; then
@@ -304,18 +316,32 @@ jobs:
           ARM64_SUCCESS=false
         fi
 
-        # At least AMD64 must succeed for release
-        if [[ "$AMD64_SUCCESS" == "false" ]]; then
-          echo "❌ AMD64 build failed, cannot create release"
-          exit 1
-        fi
+        # Create manifest for each tag
+        for tag in $TAGS; do
+          echo "Creating manifest for tag: $tag"
 
-        # For now, just report status - the individual builds already pushed their images
-        if [[ "$ARM64_SUCCESS" == "true" ]]; then
-          echo "🎉 Both AMD64 and ARM64 builds successful - multi-platform images available"
-        else
-          echo "✅ AMD64 build successful - single platform image available"
-        fi
+          if [[ "$ARM64_SUCCESS" == "true" ]]; then
+            # Multi-architecture manifest
+            echo "Creating multi-architecture manifest"
+            docker manifest create "$tag" \
+              "$tag-amd64" \
+              "$tag-arm64"
+
+            docker manifest annotate "$tag" "$tag-amd64" --arch amd64
+            docker manifest annotate "$tag" "$tag-arm64" --arch arm64
+            docker manifest push "$tag"
+
+            echo "🎉 Multi-platform image created: $tag (amd64 + arm64)"
+          else
+            # AMD64 only manifest
+            echo "Creating AMD64-only manifest"
+            docker manifest create "$tag" "$tag-amd64"
+            docker manifest annotate "$tag" "$tag-amd64" --arch amd64
+            docker manifest push "$tag"
+
+            echo "✅ Single-platform image created: $tag (amd64 only)"
+          fi
+        done
 
   security-scan:
     name: Security Scan
