@@ -296,6 +296,9 @@ jobs:
         echo "AMD64 build result: ${{ needs.build-amd64.result }}"
         echo "ARM64 build result: ${{ needs.build-arm64.result }}"
 
+        # Enable Docker experimental features for manifest commands
+        export DOCKER_CLI_EXPERIMENTAL=enabled
+
         # Parse tags from metadata step
         TAGS="${{ steps.meta.outputs.tags }}"
 
@@ -320,30 +323,49 @@ jobs:
         for tag in $TAGS; do
           echo "Creating manifest for tag: $tag"
 
+          # Check if platform-specific images exist
+          echo "Checking for platform images:"
+          echo "  AMD64: $tag-amd64"
+          echo "  ARM64: $tag-arm64"
+
           if [[ "$ARM64_SUCCESS" == "true" ]]; then
             # Multi-architecture manifest
             echo "Creating multi-architecture manifest"
+
+            # Remove existing manifest if it exists
+            docker manifest rm "$tag" 2>/dev/null || true
+
+            # Create new manifest
             docker manifest create "$tag" \
               "$tag-amd64" \
               "$tag-arm64"
 
-            docker manifest annotate "$tag" "$tag-amd64" --arch amd64
-            docker manifest annotate "$tag" "$tag-arm64" --arch arm64
+            # Inspect the created manifest
+            docker manifest inspect "$tag"
+
+            # Push the manifest
             docker manifest push "$tag"
 
             echo "🎉 Multi-platform image created: $tag (amd64 + arm64)"
           else
             # AMD64 only manifest
             echo "Creating AMD64-only manifest"
+
+            # Remove existing manifest if it exists
+            docker manifest rm "$tag" 2>/dev/null || true
+
+            # Create new manifest with just AMD64
             docker manifest create "$tag" "$tag-amd64"
-            docker manifest annotate "$tag" "$tag-amd64" --arch amd64
+
+            # Inspect the created manifest
+            docker manifest inspect "$tag"
+
+            # Push the manifest
             docker manifest push "$tag"
 
             echo "✅ Single-platform image created: $tag (amd64 only)"
           fi
-        done
-
-  security-scan:
+        done  security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
