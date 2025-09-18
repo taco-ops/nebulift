@@ -157,10 +157,13 @@ jobs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          network=host
 
-    - name: Build and test container
+    - name: Build and test container (AMD64 only for testing)
       run: |
-        docker build -t nebulift:test .
+        docker build --platform linux/amd64 -t nebulift:test .
         docker run --rm nebulift:test python -c "import nebulift; print('✓ Container import test passed')"
 
     - name: Log in to GitHub Container Registry
@@ -183,9 +186,13 @@ jobs:
           type=sha,prefix={{branch}}-
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Build and push container image
+    # Try multi-platform build with better resource management
+    - name: Build and push multi-platform container image
       if: github.event_name != 'pull_request'
+      id: multi_platform_build
+      continue-on-error: true
       uses: docker/build-push-action@v5
+      timeout-minutes: 60
       with:
         context: .
         platforms: linux/amd64,linux/arm64
@@ -194,6 +201,32 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    # Fallback: Build AMD64 only if multi-platform fails
+    - name: Build and push AMD64 container image (fallback)
+      if: github.event_name != 'pull_request' && steps.multi_platform_build.outcome == 'failure'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Multi-platform build status
+      if: github.event_name != 'pull_request'
+      run: |
+        if [[ "${{ steps.multi_platform_build.outcome }}" == "success" ]]; then
+          echo "✅ Multi-platform build succeeded"
+        else
+          echo "⚠️ Multi-platform build failed, fallback to AMD64 completed"
+        fi
 
   security-scan:
     name: Security Scan
