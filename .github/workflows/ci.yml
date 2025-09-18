@@ -206,7 +206,10 @@ jobs:
         context: .
         platforms: linux/amd64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}-amd64
+        tags: |
+          ghcr.io/${{ github.repository }}:main-amd64
+          ghcr.io/${{ github.repository }}:latest-amd64
+          ghcr.io/${{ github.repository }}:main-${{ github.sha }}-amd64
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,key=amd64
         cache-to: type=gha,mode=max,key=amd64
@@ -257,7 +260,10 @@ jobs:
         context: .
         platforms: linux/arm64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}-arm64
+        tags: |
+          ghcr.io/${{ github.repository }}:main-arm64
+          ghcr.io/${{ github.repository }}:latest-arm64
+          ghcr.io/${{ github.repository }}:main-${{ github.sha }}-arm64
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,key=arm64
         cache-to: type=gha,mode=max,key=arm64
@@ -299,8 +305,7 @@ jobs:
         # Enable Docker experimental features for manifest commands
         export DOCKER_CLI_EXPERIMENTAL=enabled
 
-        # Parse tags from metadata step
-        TAGS="${{ steps.meta.outputs.tags }}"
+        REPOSITORY="ghcr.io/${{ github.repository }}"
 
         if [[ "${{ needs.build-amd64.result }}" == "success" ]]; then
           echo "✅ AMD64 build successful"
@@ -319,14 +324,17 @@ jobs:
           ARM64_SUCCESS=false
         fi
 
-        # Create manifest for each tag
-        for tag in $TAGS; do
+        # Create manifests for each tag we want
+        MANIFEST_TAGS=("main" "latest" "main-${{ github.sha }}")
+
+        for base_tag in "${MANIFEST_TAGS[@]}"; do
+          tag="$REPOSITORY:$base_tag"
           echo "Creating manifest for tag: $tag"
 
           # Check if platform-specific images exist
           echo "Checking for platform images:"
-          echo "  AMD64: $tag-amd64"
-          echo "  ARM64: $tag-arm64"
+          echo "  AMD64: $REPOSITORY:$base_tag-amd64"
+          echo "  ARM64: $REPOSITORY:$base_tag-arm64"
 
           if [[ "$ARM64_SUCCESS" == "true" ]]; then
             # Multi-architecture manifest
@@ -337,8 +345,8 @@ jobs:
 
             # Create new manifest
             docker manifest create "$tag" \
-              "$tag-amd64" \
-              "$tag-arm64"
+              "$REPOSITORY:$base_tag-amd64" \
+              "$REPOSITORY:$base_tag-arm64"
 
             # Inspect the created manifest
             docker manifest inspect "$tag"
@@ -355,7 +363,7 @@ jobs:
             docker manifest rm "$tag" 2>/dev/null || true
 
             # Create new manifest with just AMD64
-            docker manifest create "$tag" "$tag-amd64"
+            docker manifest create "$tag" "$REPOSITORY:$base_tag-amd64"
 
             # Inspect the created manifest
             docker manifest inspect "$tag"
