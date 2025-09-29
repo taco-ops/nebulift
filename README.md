@@ -128,43 +128,12 @@ kubectl logs -f job/nebulift-training
 kubectl patch job nebulift-training -p '{"spec":{"parallelism":8}}'
 ```
 
-## 🏗️ Architecture (For the Curious)
-
-**Four-Component Pipeline**:
-1. **FITS Processor**: Loads astronomical files, handles metadata, normalizes data
-2. **CV Pre-filter**: Traditional computer vision (Hough transforms, texture analysis)
-3. **ML Model**: ResNet18 binary classifier for final quality assessment
-4. **Distributed Training**: Kubernetes-native scaling for big datasets
-
-**The Magic Workflow**:
-```
-Raw FITS Files → Normalization → CV Analysis → Quality Scoring → ML Classification
-                                      ↓
-                              Auto-Generated Labels → Model Training → Deployment
-```
-
 ## 🚦 Project Status
 
-**Current State**: Beta - Ready for Real-World Testing! 🧪
-- ✅ **67 passing tests** with comprehensive coverage
-- ✅ **Enterprise CI/CD pipeline** with multi-platform testing  
+**Current State**: Ready for Real-World Testing! 🧪  
 - ✅ **Container images** ready for deployment
-- ✅ **Complete documentation** and examples
 - ✅ **Model persistence** with versioning and metadata
 - ✅ **Distributed training** infrastructure
-
-**🔬 Beta Testing Phase**:
-We're actively seeking feedback from the astrophotography community! The core system is feature-complete with robust infrastructure, but we want to validate performance across different:
-- 🔭 Telescope setups and imaging conditions
-- 📊 Various FITS file formats and metadata structures  
-- 🌍 Real observatory workflows and data volumes
-- ⚙️ Hardware configurations (from laptops to RPi5 clusters)
-
-**What's Next** (Post-Beta):
-- 📊 Real-world performance benchmarks on various telescopes
-- 🎛️ GUI interface for non-command-line users
-- 📱 Integration with popular astrophotography software
-- 🌟 More sophisticated artifact detection algorithms
 
 ## 🧪 Validation & Testing
 
@@ -174,12 +143,6 @@ uv run python validate_system.py  # Full end-to-end test
 uv run pytest -v                  # Run the test suite (67 tests!)
 uv run python test_model_persistence.py  # Test model save/load
 ```
-
-**Test Coverage**:
-- **54 core tests + 13 model persistence tests** = 67 total
-- **89% code coverage** across the main components
-- **Property-based testing** with Hypothesis for edge cases
-- **Multi-platform CI** (Ubuntu, macOS, Python 3.9-3.12)
 
 ### Hardware Requirements
 - **Minimum**: 4GB RAM, modern CPU
@@ -198,28 +161,7 @@ The system supports distributed training across Kubernetes clusters using PyTorc
 - **Model Aggregation**: Synchronous gradient aggregation using all-reduce operations
 - **Kubernetes Integration**: Native K8s job orchestration with persistent storage
 
-## 🔬 Technical Highlights (For the Tech-Savvy)
-
-**System Architecture**:
-- **Modular Design**: Four independent components that work together seamlessly
-- **CPU-Optimized**: PyTorch quantization + efficient algorithms = no GPU needed
-- **Container-Native**: Multi-arch Docker images (AMD64 + ARM64) ready for deployment
-- **K8s Integration**: Full Kubernetes support with persistent storage and resource management
-
-**Advanced Features**:
-- **Model Persistence**: Comprehensive checkpoint system with versioning and metadata
-- **Distributed Training**: PyTorch DistributedDataParallel with 'gloo' backend for CPU clusters
-- **Smart Caching**: Image statistics caching for improved performance
-- **Robust Error Handling**: Graceful degradation when files are corrupted
-- **Property-Based Testing**: Hypothesis framework catches edge cases you'd never think of
-
-**Code Quality** (because we care about maintainable software):
-- **Type Safety**: Full mypy type checking with strict enforcement
-- **Linting**: Black + Ruff + pre-commit hooks = consistent, clean code
-- **Testing**: 67 tests with 89% coverage + comprehensive CI/CD pipeline
-- **Documentation**: Every function documented, examples everywhere
-
-## � Beta Testing - We Need Your Help!
+## We Need Your Help!
 
 **Are you an astrophotographer?** We'd love your feedback! Here's how you can help us make Nebulift better:
 
@@ -235,25 +177,11 @@ The system supports distributed training across Kubernetes clusters using PyTorc
 3. **Share data**: If willing, share problematic images that don't classify correctly
 4. **Suggest features**: What would make this more useful for your workflow?
 
-### 🎯 Beta Testing Goals
-- Validate accuracy across different telescope/camera combinations
-- Optimize performance for various hardware configurations
-- Identify edge cases and improve artifact detection
-- Gather user experience feedback for UI/workflow improvements
-
 **Contact**: Open a GitHub issue or discussion - we're actively monitoring and will respond quickly!
 
 ## �🤝 Contributing & Community
 
 **Found a bug?** Open an issue! **Have an idea?** We'd love to hear it! **Want to contribute?** PRs are welcome!
-
-This project is designed to grow with the astrophotography community. Whether you're:
-- 🔭 An observatory operator with specific needs
-- 🧑‍💻 A developer who wants to improve the algorithms  
-- 📊 A data scientist interested in astronomical ML applications
-- 🏭 A systems admin deploying on Kubernetes clusters
-
-There's a place for you here!
 
 ## 🙏 Acknowledgments
 
@@ -270,15 +198,8 @@ MIT License - feel free to use this however you'd like! If it helps you capture 
 ---
 
 *Happy imaging, and may your nights be clear and your satellites be few!* 🚀🌟  
-3. **Performance Validation**: Benchmark on Raspberry Pi 5 clusters and resource-constrained hardware
-4. **CLI Interface**: Command-line tool for batch processing and distributed training workflows
-5. **Production Deployment**: Helm charts and production-ready K8s deployments
-6. **Distributed Inference**: Extend distributed capabilities to inference workloads
-
-Once validated through real-world use and cluster deployments, the system will be promoted to production status.
 
 ## 📄 License & Credits
 
 This project demonstrates professional software development practices for scientific applications with distributed computing capabilities. The implementation follows modern Python standards and is designed for real-world astronomical image processing workflows across single nodes and Kubernetes clusters.
 
-**Note**: This is a beta implementation with core functionality and distributed training complete with comprehensive testing. Real-world validation and performance optimization on actual telescope data and RPi5 clusters are needed before production deployment. All core requirements have been met and the system has been thoroughly unit tested.
