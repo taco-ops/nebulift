@@ -200,7 +200,7 @@ class K8sDistributedTrainer(ModelTrainer):
         return self.rank == 0
 
 
-def main():
+def main() -> None:
     """Main entry point for Kubernetes distributed training."""
     import sys
 
@@ -297,8 +297,8 @@ def main():
         logger.info(f"Rank {rank}: Training completed successfully")
 
     except Exception as e:
-        rank = os.environ.get("RANK", "unknown")
-        logger.error(f"Training failed on rank {rank}: {e}")
+        rank_str = os.environ.get("RANK", "unknown")
+        logger.error(f"Training failed on rank {rank_str}: {e}")
         sys.exit(1)
 
 
