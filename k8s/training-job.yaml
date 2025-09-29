@@ -31,7 +31,7 @@ spec:
 
       containers:
         - name: nebulift-trainer
-          image: ghcr.io/taco-ops/nebulift:latest  # Use published multi-arch image
+          image: ghcr.io/taco-ops/nebulift:0.3.0-beta  # Use published release image
           imagePullPolicy: IfNotPresent
 
           command: ["python", "-m", "nebulift.distributed.k8s_trainer"]
@@ -97,26 +97,6 @@ spec:
               mountPath: /models
             - name: local-cache
               mountPath: /tmp/cache
-
-          # Health checks
-          livenessProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - "import psutil; exit(0 if any('python' in p.name() for p in psutil.process_iter()) else 1)"
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 10
-
-          readinessProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - "import torch; print('PyTorch ready')"
-            initialDelaySeconds: 30
-            periodSeconds: 10
 
       volumes:
         # Use hostPath volumes for RPi cluster - shared across pods

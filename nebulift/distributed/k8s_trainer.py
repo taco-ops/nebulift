@@ -222,13 +222,42 @@ def main():
     try:
         # Get environment variables
         world_size = int(os.environ.get("WORLD_SIZE", 1))
-        rank = int(os.environ.get("RANK", 0))
+        rank_str = os.environ.get("RANK", "0")
+        if not rank_str or rank_str == "":
+            # Fallback: use a hash of the hostname as rank
+            import socket
+
+            hostname = socket.gethostname()
+            rank = hash(hostname) % world_size
+            logger.warning(f"RANK not set, using hostname-based rank: {rank}")
+        elif rank_str.startswith("nebulift-training-"):
+            # Extract rank from pod name (e.g., "nebulift-training-abc123" -> hash-based rank)
+            import hashlib
+
+            pod_name = rank_str
+            rank = (
+                int(
+                    hashlib.md5(pod_name.encode(), usedforsecurity=False).hexdigest(),
+                    16,
+                )
+                % world_size
+            )
+            logger.info(f"Derived rank {rank} from pod name: {pod_name}")
+        else:
+            rank = int(rank_str)
+
         master_addr = os.environ.get("MASTER_ADDR", "localhost")
         master_port = int(os.environ.get("MASTER_PORT", 29500))
 
         logger.info(
             f"Distributed training config: world_size={world_size}, rank={rank}, master={master_addr}:{master_port}"
         )
+
+        # Set environment variables for the trainer
+        os.environ["WORLD_SIZE"] = str(world_size)
+        os.environ["RANK"] = str(rank)
+        os.environ["MASTER_ADDR"] = master_addr
+        os.environ["MASTER_PORT"] = str(master_port)
 
         # Create a simple model for testing
         model = AstroQualityClassifier(pretrained=False)
@@ -243,13 +272,8 @@ def main():
         # Initialize distributed trainer
         trainer = K8sDistributedTrainer(
             model=model,
-            world_size=world_size,
-            rank=rank,
             backend="gloo",  # CPU-only backend for RPi5
         )
-
-        # Setup distributed training
-        trainer.setup_distributed()
 
         logger.info(
             f"Rank {rank}: Starting distributed training with {len(dataloader)} batches"
@@ -269,10 +293,11 @@ def main():
                 if batch_idx >= 2:  # Only run a few batches for demo
                     break
 
-        trainer.cleanup_distributed()
+        trainer.cleanup()
         logger.info(f"Rank {rank}: Training completed successfully")
 
     except Exception as e:
+        rank = os.environ.get("RANK", "unknown")
         logger.error(f"Training failed on rank {rank}: {e}")
         sys.exit(1)
 
