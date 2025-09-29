@@ -1,7 +1,10 @@
+# NFS-based training job for distributed FITS data processing
+# This version uses NFS storage for shared data access across all pods
+
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: nebulift-training
+  name: nebulift-training-nfs
   labels:
     app: nebulift-training
 spec:
@@ -46,7 +49,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
             - name: MASTER_ADDR
-              value: "nebulift-training-coordinator"
+              value: "nebulift-training-headless.nebulift.svc.cluster.local"
             - name: MASTER_PORT
               value: "29500"
 
@@ -91,30 +94,43 @@ spec:
               cpu: "2"
 
           volumeMounts:
-            - name: training-data
+            - name: nfs-data
               mountPath: /data
               readOnly: true
-            - name: model-storage
+            - name: nfs-models
               mountPath: /models
+            - name: nfs-coordination
+              mountPath: /shared
             - name: local-cache
               mountPath: /tmp/cache
 
       volumes:
-        # Use NFS volumes for distributed access across all nodes
-        - name: training-data
+        # Use proper NFS volumes that can be accessed from any node
+        - name: nfs-data
           nfs:
             server: 10.42.0.22
             path: /exports/cluster-storage/nebulift/data
-        - name: model-storage
+        - name: nfs-models
           nfs:
             server: 10.42.0.22
             path: /exports/cluster-storage/nebulift/models
+        - name: nfs-coordination
+          nfs:
+            server: 10.42.0.22
+            path: /exports/cluster-storage
         - name: local-cache
           emptyDir:
             sizeLimit: 10Gi  # Per-pod cache
 
-      # Tolerations for RPi5 nodes
+      # Remove node selector to allow distribution across all nodes
+      # nodeSelector:
+      #   node-role.kubernetes.io/control-plane: "true"
+
+      # Tolerations for all node types
       tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
         - key: "node.kubernetes.io/arch"
           operator: "Equal"
           value: "arm64"

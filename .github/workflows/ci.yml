@@ -11,9 +11,120 @@ env:
   UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
+  # Detect what type of changes were made to optimize CI execution
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code-changes: ${{ steps.changes.outputs.code }}
+      container-changes: ${{ steps.changes.outputs.container }}
+      k8s-changes: ${{ steps.changes.outputs.k8s }}
+      docs-changes: ${{ steps.changes.outputs.docs }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: changes
+      with:
+        filters: |
+          code:
+            - 'nebulift/**'
+            - 'tests/**'
+            - 'pyproject.toml'
+            - 'uv.lock'
+            - '*.py'
+          container:
+            - 'Dockerfile'
+            - 'requirements.txt'
+            - '.dockerignore'
+            - 'pyproject.toml'
+            - 'uv.lock'
+            - 'nebulift/**'
+          k8s:
+            - 'k8s/**'
+            - 'deploy-*.sh'
+          docs:
+            - '*.md'
+            - 'docs/**'
+            - 'local-docs/**'
+
+  # Fast path success job - runs when only docs change or no relevant changes
+  fast-path-success:
+    name: Fast Path Success
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      (needs.detect-changes.outputs.code-changes == 'false' &&
+       needs.detect-changes.outputs.container-changes == 'false') ||
+      (needs.detect-changes.outputs.docs-changes == 'true' &&
+       needs.detect-changes.outputs.code-changes == 'false' &&
+       needs.detect-changes.outputs.container-changes == 'false')
+    steps:
+    - name: Fast path completed
+      run: |
+        echo "🚀 Fast path CI completed!"
+        echo "Only documentation or non-code changes detected."
+        echo "Skipping container builds, tests, and security scans."
+        echo "✅ CI passed without running expensive operations."
+
+  # Summary job to provide clear status
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, lint-and-format, test, test-distributed, security-scan, fast-path-success]
+    if: always()
+    steps:
+    - name: CI Summary
+      run: |
+        echo "## 📊 CI Pipeline Summary"
+        echo ""
+        echo "### 🔍 Change Detection:"
+        echo "- Code changes: ${{ needs.detect-changes.outputs.code-changes }}"
+        echo "- Container changes: ${{ needs.detect-changes.outputs.container-changes }}"
+        echo "- K8s changes: ${{ needs.detect-changes.outputs.k8s-changes }}"
+        echo "- Docs changes: ${{ needs.detect-changes.outputs.docs-changes }}"
+        echo ""
+        echo "### 🏃‍♂️ Jobs Executed:"
+        echo "- Lint & Format: ${{ needs.lint-and-format.result || 'skipped' }}"
+        echo "- Test Suite: ${{ needs.test.result || 'skipped' }}"
+        echo "- Distributed Tests: ${{ needs.test-distributed.result || 'skipped' }}"
+        echo "- Security Scan: ${{ needs.security-scan.result || 'skipped' }}"
+        echo "- Fast Path: ${{ needs.fast-path-success.result || 'skipped' }}"
+        echo ""
+        if [[ "${{ needs.detect-changes.outputs.container-changes }}" == "true" ]]; then
+          echo "🐳 Container builds will run on main branch push"
+        else
+          echo "⚡ Container builds skipped - no container-relevant changes"
+        fi
+        echo ""
+        # Determine overall success
+        LINT_OK="${{ needs.lint-and-format.result }}"
+        TEST_OK="${{ needs.test.result }}"
+        DIST_OK="${{ needs.test-distributed.result }}"
+        SEC_OK="${{ needs.security-scan.result }}"
+        FAST_OK="${{ needs.fast-path-success.result }}"
+
+        # Check if we're in fast path mode
+        if [[ "$FAST_OK" == "success" ]]; then
+          echo "✅ CI completed successfully (fast path)"
+          exit 0
+        fi
+
+        # Check core jobs
+        if [[ "$LINT_OK" == "success" && "$TEST_OK" == "success" && "$DIST_OK" == "success" && "$SEC_OK" == "success" ]]; then
+          echo "✅ CI completed successfully"
+          exit 0
+        elif [[ "$LINT_OK" == "skipped" && "$TEST_OK" == "skipped" && "$DIST_OK" == "skipped" && "$SEC_OK" == "skipped" ]]; then
+          echo "⚠️ All jobs were skipped"
+          exit 1
+        else
+          echo "❌ Some CI jobs failed"
+          exit 1
+        fi
   lint-and-format:
     name: Lint and Format Check
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code-changes == 'true' || needs.detect-changes.outputs.container-changes == 'true'
     steps:
     - uses: actions/checkout@v4
 
@@ -52,6 +163,8 @@ jobs:
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code-changes == 'true' || needs.detect-changes.outputs.container-changes == 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -106,6 +219,8 @@ jobs:
   test-distributed:
     name: Test Distributed Training
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code-changes == 'true' || needs.detect-changes.outputs.container-changes == 'true'
     steps:
     - uses: actions/checkout@v4
 
@@ -149,8 +264,10 @@ jobs:
   test-container:
     name: Test Container Build
     runs-on: ubuntu-latest
-    needs: [lint-and-format, test]
-    if: github.ref == 'refs/heads/main'
+    needs: [detect-changes, lint-and-format, test]
+    if: |
+      (needs.detect-changes.outputs.container-changes == 'true') &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'pull_request')
 
     steps:
     - uses: actions/checkout@v4
@@ -166,8 +283,10 @@ jobs:
   build-amd64:
     name: Build AMD64 Container
     runs-on: ubuntu-latest
-    needs: [test-container]
-    if: github.ref == 'refs/heads/main'
+    needs: [detect-changes, test-container]
+    if: |
+      (needs.detect-changes.outputs.container-changes == 'true') &&
+      (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tag: ${{ steps.meta.outputs.tags }}
@@ -218,8 +337,10 @@ jobs:
   build-arm64:
     name: Build ARM64 Container
     runs-on: ubuntu-latest
-    needs: [test-container]
-    if: github.ref == 'refs/heads/main'
+    needs: [detect-changes, test-container]
+    if: |
+      (needs.detect-changes.outputs.container-changes == 'true') &&
+      (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tag: ${{ steps.meta.outputs.tags }}
@@ -272,8 +393,10 @@ jobs:
   create-manifest:
     name: Create Multi-Platform Manifest
     runs-on: ubuntu-latest
-    needs: [build-amd64, build-arm64]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && always()
+    needs: [detect-changes, build-amd64, build-arm64]
+    if: |
+      (needs.detect-changes.outputs.container-changes == 'true') &&
+      (github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && always())
 
     steps:
     - name: Set up Docker Buildx
@@ -378,6 +501,8 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code-changes == 'true' || needs.detect-changes.outputs.container-changes == 'true'
     steps:
     - uses: actions/checkout@v4
 
@@ -413,7 +538,10 @@ jobs:
   performance-benchmark:
     name: Performance Benchmark
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    needs: detect-changes
+    if: |
+      (needs.detect-changes.outputs.code-changes == 'true') &&
+      (github.ref == 'refs/heads/main')
 
     steps:
     - uses: actions/checkout@v4
@@ -488,8 +616,10 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [lint-and-format, test, test-distributed, create-manifest, security-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [detect-changes, lint-and-format, test, test-distributed, security-scan]
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') &&
+      (needs.detect-changes.outputs.code-changes == 'true' || needs.detect-changes.outputs.container-changes == 'true')
 
     steps:
     - uses: actions/checkout@v4
