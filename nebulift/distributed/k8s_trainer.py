@@ -198,3 +198,84 @@ class K8sDistributedTrainer(ModelTrainer):
     def is_main_process(self) -> bool:
         """Check if this is the main process (rank 0)."""
         return self.rank == 0
+
+
+def main():
+    """Main entry point for Kubernetes distributed training."""
+    import sys
+
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from ..ml_model import AstroQualityClassifier
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    logger.info(
+        f"Starting Kubernetes distributed training on rank {os.environ.get('RANK', 'unknown')}"
+    )
+
+    try:
+        # Get environment variables
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        rank = int(os.environ.get("RANK", 0))
+        master_addr = os.environ.get("MASTER_ADDR", "localhost")
+        master_port = int(os.environ.get("MASTER_PORT", 29500))
+
+        logger.info(
+            f"Distributed training config: world_size={world_size}, rank={rank}, master={master_addr}:{master_port}"
+        )
+
+        # Create a simple model for testing
+        model = AstroQualityClassifier(pretrained=False)
+
+        # Create dummy training data for demonstration
+        dummy_images = torch.randn(100, 3, 224, 224)  # 100 dummy images
+        dummy_labels = torch.randint(0, 2, (100,))  # Binary labels
+
+        dataset = TensorDataset(dummy_images, dummy_labels)
+        dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+
+        # Initialize distributed trainer
+        trainer = K8sDistributedTrainer(
+            model=model,
+            world_size=world_size,
+            rank=rank,
+            backend="gloo",  # CPU-only backend for RPi5
+        )
+
+        # Setup distributed training
+        trainer.setup_distributed()
+
+        logger.info(
+            f"Rank {rank}: Starting distributed training with {len(dataloader)} batches"
+        )
+
+        # Run a simple training loop for demonstration
+        for epoch in range(2):  # Just 2 epochs for demo
+            for batch_idx, (data, targets) in enumerate(dataloader):
+                # Basic forward pass for demonstration
+                outputs = trainer.model(data)
+                loss = torch.nn.functional.cross_entropy(outputs, targets)
+
+                logger.info(
+                    f"Rank {rank}, Epoch {epoch}, Batch {batch_idx}: Loss = {loss.item():.4f}"
+                )
+
+                if batch_idx >= 2:  # Only run a few batches for demo
+                    break
+
+        trainer.cleanup_distributed()
+        logger.info(f"Rank {rank}: Training completed successfully")
+
+    except Exception as e:
+        logger.error(f"Training failed on rank {rank}: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
