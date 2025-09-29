@@ -31,7 +31,7 @@ spec:
 
       containers:
         - name: nebulift-trainer
-          image: nebulift:latest  # Build image with: docker build -t nebulift .
+          image: ghcr.io/taco-ops/nebulift:latest  # Use published multi-arch image
           imagePullPolicy: IfNotPresent
 
           command: ["python", "-m", "nebulift.distributed.k8s_trainer"]
@@ -119,15 +119,18 @@ spec:
             periodSeconds: 10
 
       volumes:
+        # Use hostPath volumes for RPi cluster - shared across pods
         - name: training-data
-          persistentVolumeClaim:
-            claimName: nebulift-training-data
+          hostPath:
+            path: /opt/nebulift/data
+            type: DirectoryOrCreate
         - name: model-storage
-          persistentVolumeClaim:
-            claimName: nebulift-models
+          hostPath:
+            path: /opt/nebulift/models
+            type: DirectoryOrCreate
         - name: local-cache
-          persistentVolumeClaim:
-            claimName: nebulift-local-cache
+          emptyDir:
+            sizeLimit: 10Gi  # Per-pod cache
 
       # Tolerations for RPi5 nodes
       tolerations:

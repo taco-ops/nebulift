@@ -1,16 +1,21 @@
+# Note: For Raspberry Pi clusters, we'll use hostPath volumes instead of PVCs
+# to allow shared access across pods. This file creates PVCs as placeholders
+# but the actual training job will use hostPath mounts.
+
+# Placeholder PVC - not used in training job
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nebulift-training-data
+  name: nebulift-placeholder
   labels:
     app: nebulift-training
 spec:
   accessModes:
-    - ReadWriteMany  # Shared across pods
-  storageClassName: nfs  # Assuming NFS storage for RPi5 cluster
+    - ReadWriteOnce
+  storageClassName: local-path
   resources:
     requests:
-      storage: 50Gi
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -20,13 +25,13 @@ metadata:
     app: nebulift-training
 spec:
   accessModes:
-    - ReadWriteMany  # Shared model storage
-  storageClassName: nfs
+    - ReadWriteOnce  # Per-pod storage
+  storageClassName: local-path
   resources:
     requests:
       storage: 10Gi
 ---
-# Optional: Local storage for faster I/O on each node
+# Local cache storage for each pod
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -35,8 +40,8 @@ metadata:
     app: nebulift-training
 spec:
   accessModes:
-    - ReadWriteOnce  # Per-node local storage
-  storageClassName: local-path  # Assuming local-path provisioner
+    - ReadWriteOnce  # Per-pod local storage
+  storageClassName: local-path
   resources:
     requests:
       storage: 20Gi
