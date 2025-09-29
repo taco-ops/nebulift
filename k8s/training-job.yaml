@@ -31,7 +31,7 @@ spec:
 
       containers:
         - name: nebulift-trainer
-          image: ghcr.io/taco-ops/nebulift:0.3.0-beta  # Use published release image
+          image: ghcr.io/taco-ops/nebulift:latest  # Use latest published image
           imagePullPolicy: IfNotPresent
 
           command: ["python", "-m", "nebulift.distributed.k8s_trainer"]

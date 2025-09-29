@@ -1,6 +1,6 @@
 [project]
 name = "nebulift"
-version = "0.3.0-beta"
+version = "0.3.1-beta"
 description = "Automated Quality Assessment for Astrophotography Images"
 readme = "README.md"
 requires-python = ">=3.9"
