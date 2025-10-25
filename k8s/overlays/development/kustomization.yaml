@@ -33,7 +33,3 @@ configMapGenerator:
     behavior: replace
     options:
       disableNameSuffixHash: true
-
-replicas:
-  - name: nebulift-training
-    count: 2
