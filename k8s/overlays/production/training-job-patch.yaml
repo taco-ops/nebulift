@@ -41,13 +41,11 @@ spec:
               readOnly: true
       volumes:
         - name: training-data
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/production/data
+          emptyDir:
+            sizeLimit: 20Gi
         - name: model-storage
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/production/models
+          emptyDir:
+            sizeLimit: 30Gi
         - name: local-cache
           emptyDir:
             sizeLimit: 20Gi

@@ -38,13 +38,11 @@ spec:
               mountPath: /tmp/cache
       volumes:
         - name: training-data
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/dev/data
+          emptyDir:
+            sizeLimit: 5Gi
         - name: model-storage
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/dev/models
+          emptyDir:
+            sizeLimit: 10Gi
         - name: local-cache
           emptyDir:
             sizeLimit: 5Gi
