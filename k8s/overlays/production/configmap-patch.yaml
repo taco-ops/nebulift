@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nebulift-training-config
+  labels:
+    environment: production
+data:
+  # Production-specific overrides
+  monitoring_enabled: "true"
+  backup_interval: "24h"
+  log_retention_days: "30"
+  alert_webhook_url: "https://your-monitoring-system.com/webhooks/nebulift"

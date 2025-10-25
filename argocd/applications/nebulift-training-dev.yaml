@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nebulift-training-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: nebulift-training-dev
+    app.kubernetes.io/component: ml-training
+    app.kubernetes.io/part-of: nebulift
+    environment: development
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: nebulift
+
+  source:
+    repoURL: https://github.com/taco-ops/nebulift.git
+    targetRevision: develop
+    path: k8s/overlays/development
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nebulift-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+
+  revisionHistoryLimit: 5
+
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      name: nebulift-training
+      jsonPointers:
+        - /spec/selector
+        - /spec/template/metadata/labels
+
+  info:
+    - name: 'Repository'
+      value: 'https://github.com/taco-ops/nebulift'
+    - name: 'Description'
+      value: 'Development environment for Nebulift ML training'
+    - name: 'Environment'
+      value: 'Development'

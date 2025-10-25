@@ -1,0 +1,122 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: nebulift
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: nebulift-project
+    app.kubernetes.io/component: argocd-project
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  description: Project for Nebulift ML training and astrophotography quality assessment
+
+  sourceRepos:
+    - 'https://github.com/taco-ops/nebulift.git'
+    - 'https://github.com/taco-ops/nebulift'  # Support both HTTP and SSH
+    - 'git@github.com:taco-ops/nebulift.git'
+
+  destinations:
+    - namespace: 'nebulift-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'argocd'
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+    - group: 'storage.k8s.io'
+      kind: StorageClass
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: ''
+      kind: PersistentVolume
+    - group: 'apps'
+      kind: Deployment
+    - group: 'apps'
+      kind: ReplicaSet
+    - group: 'apps'
+      kind: DaemonSet
+    - group: 'batch'
+      kind: Job
+    - group: 'batch'
+      kind: CronJob
+    - group: 'rbac.authorization.k8s.io'
+      kind: Role
+    - group: 'rbac.authorization.k8s.io'
+      kind: RoleBinding
+    - group: 'networking.k8s.io'
+      kind: Ingress
+    - group: 'policy'
+      kind: PodDisruptionBudget
+    - group: 'autoscaling'
+      kind: HorizontalPodAutoscaler
+
+  roles:
+    - name: admin
+      description: Full admin access to nebulift project
+      policies:
+        - p, proj:nebulift:admin, applications, *, nebulift/*, allow
+        - p, proj:nebulift:admin, repositories, *, *, allow
+        - p, proj:nebulift:admin, clusters, *, *, allow
+        - p, proj:nebulift:admin, exec, create, nebulift/*, allow
+      groups:
+        - 'nebulift-admins'
+        - 'platform-team'
+
+    - name: developer
+      description: Developer access for nebulift project
+      policies:
+        - p, proj:nebulift:developer, applications, get, nebulift/*, allow
+        - p, proj:nebulift:developer, applications, sync, nebulift/*, allow
+        - p, proj:nebulift:developer, repositories, get, *, allow
+        - p, proj:nebulift:developer, logs, get, nebulift/*, allow
+      groups:
+        - 'nebulift-developers'
+        - 'ml-engineers'
+
+    - name: viewer
+      description: Read-only access to nebulift project
+      policies:
+        - p, proj:nebulift:viewer, applications, get, nebulift/*, allow
+        - p, proj:nebulift:viewer, logs, get, nebulift/*, allow
+      groups:
+        - 'nebulift-viewers'
+        - 'data-scientists'
+
+  syncWindows:
+    - kind: allow
+      schedule: '* * * * *'
+      duration: 1h
+      applications:
+        - '*'
+      manualSync: true
+    - kind: deny
+      schedule: '0 2 * * 1-5'  # Deny automatic sync during weekday 2-3 AM maintenance
+      duration: 1h
+      applications:
+        - '*'
+      manualSync: false
+
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: ''
+        kind: ConfigMap
+        name: 'kube-root-ca.crt'

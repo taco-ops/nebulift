@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nebulift-training
+  labels:
+    environment: production
+spec:
+  parallelism: 8  # Scale up for production
+  completions: 8
+  backoffLimit: 2  # Stricter retry policy for production
+  template:
+    spec:
+      containers:
+        - name: nebulift-trainer
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "2"
+            limits:
+              memory: "4Gi"
+              cpu: "3"
+          env:
+            - name: WORLD_SIZE
+              value: "8"
+            - name: ENVIRONMENT
+              value: "production"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: ENABLE_METRICS
+              value: "true"
+          volumeMounts:
+            - name: training-data
+              mountPath: /data
+              readOnly: true
+            - name: model-storage
+              mountPath: /models
+            - name: local-cache
+              mountPath: /tmp/cache
+            - name: production-config
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: training-data
+          nfs:
+            server: 10.42.0.22
+            path: /exports/cluster-storage/nebulift/production/data
+        - name: model-storage
+          nfs:
+            server: 10.42.0.22
+            path: /exports/cluster-storage/nebulift/production/models
+        - name: local-cache
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: production-config
+          configMap:
+            name: nebulift-training-config

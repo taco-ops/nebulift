@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nebulift-training
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: nebulift-training
+    app.kubernetes.io/component: ml-training
+    app.kubernetes.io/part-of: nebulift
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: nebulift
+
+  source:
+    repoURL: https://github.com/taco-ops/nebulift.git
+    targetRevision: HEAD
+    path: k8s/overlays/production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nebulift-training
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      name: nebulift-training
+      jsonPointers:
+        - /spec/selector
+        - /spec/template/metadata/labels
+    - group: ""
+      kind: ConfigMap
+      name: nebulift-training-config
+      jsonPointers:
+        - /data/last_updated
+
+  info:
+    - name: 'Repository'
+      value: 'https://github.com/taco-ops/nebulift'
+    - name: 'Description'
+      value: 'Distributed ML training for astrophotography quality assessment'
+    - name: 'Environment'
+      value: 'Production'

@@ -1,0 +1,83 @@
+# DaemonSet to mount NFS storage on all cluster nodes
+# This ensures distributed training can access FITS data from any node
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nfs-mounter
+  labels:
+    app: nfs-mounter
+spec:
+  selector:
+    matchLabels:
+      app: nfs-mounter
+  template:
+    metadata:
+      labels:
+        app: nfs-mounter
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: nfs-mounter
+          image: alpine:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "🔧 Setting up NFS mount on node: $(hostname)"
+
+              # Install NFS client utilities
+              apk add --no-cache nfs-utils
+
+              # Create mount directory on host
+              mkdir -p /host/mnt/cluster-storage
+
+              # Get the master node IP (where NFS server is running)
+              # You can also use a specific NFS server IP if different
+              MASTER_IP=$(nslookup kubernetes.default.svc.cluster.local | grep Address | tail -1 | cut -d' ' -f2)
+
+              # Check if this is the master node (already has NFS mounted)
+              if mountpoint -q /host/mnt/cluster-storage; then
+                echo "✅ NFS already mounted on this node"
+              else
+                echo "🔗 Mounting NFS from master node: $MASTER_IP"
+
+                # Mount the NFS export from master node
+                # Assuming NFS server is running on master with the storage exported
+                mount -t nfs -o vers=3,proto=tcp $MASTER_IP:/mnt/cluster-storage /host/mnt/cluster-storage
+
+                if [ $? -eq 0 ]; then
+                  echo "✅ NFS mounted successfully"
+                else
+                  echo "❌ Failed to mount NFS, trying alternative approach"
+                  # Alternative: bind mount if NFS is shared via other means
+                  echo "Checking for shared filesystem..."
+                fi
+              fi
+
+              # Verify mount and show contents
+              echo "📁 NFS mount contents:"
+              ls -la /host/mnt/cluster-storage/
+
+              # Keep container running to maintain mount
+              echo "🔄 Keeping NFS mount alive..."
+              while true; do
+                sleep 300
+                if ! mountpoint -q /host/mnt/cluster-storage; then
+                  echo "⚠️  NFS mount lost, attempting remount..."
+                  mount -t nfs -o vers=3,proto=tcp $MASTER_IP:/mnt/cluster-storage /host/mnt/cluster-storage || true
+                fi
+              done
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+              mountPropagation: Bidirectional
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+      tolerations:
+        - operator: Exists  # Run on all nodes including master and workers
