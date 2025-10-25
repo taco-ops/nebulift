@@ -21,7 +21,7 @@ commonAnnotations:
 
 images:
   - name: ghcr.io/taco-ops/nebulift
-    newTag: develop
+    newTag: latest  # Use latest tag available in registry
 
 patchesStrategicMerge:
   - training-job-patch.yaml
