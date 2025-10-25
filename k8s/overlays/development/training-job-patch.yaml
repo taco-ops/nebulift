@@ -28,21 +28,3 @@ spec:
               value: "DEBUG"
             - name: DEBUG_MODE
               value: "true"
-          volumeMounts:
-            - name: training-data
-              mountPath: /data
-              readOnly: true
-            - name: model-storage
-              mountPath: /models
-            - name: local-cache
-              mountPath: /tmp/cache
-      volumes:
-        - name: training-data
-          emptyDir:
-            sizeLimit: 5Gi
-        - name: model-storage
-          emptyDir:
-            sizeLimit: 10Gi
-        - name: local-cache
-          emptyDir:
-            sizeLimit: 5Gi

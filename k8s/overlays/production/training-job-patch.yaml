@@ -28,27 +28,3 @@ spec:
               value: "INFO"
             - name: ENABLE_METRICS
               value: "true"
-          volumeMounts:
-            - name: training-data
-              mountPath: /data
-              readOnly: true
-            - name: model-storage
-              mountPath: /models
-            - name: local-cache
-              mountPath: /tmp/cache
-            - name: production-config
-              mountPath: /app/config
-              readOnly: true
-      volumes:
-        - name: training-data
-          emptyDir:
-            sizeLimit: 20Gi
-        - name: model-storage
-          emptyDir:
-            sizeLimit: 30Gi
-        - name: local-cache
-          emptyDir:
-            sizeLimit: 20Gi
-        - name: production-config
-          configMap:
-            name: nebulift-training-config
