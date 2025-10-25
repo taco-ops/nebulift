@@ -100,15 +100,13 @@ spec:
               mountPath: /tmp/cache
 
       volumes:
-        # Use NFS volumes for distributed access across all nodes
+        # Use emptyDir for now (NFS server not configured)
         - name: training-data
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/data
+          emptyDir:
+            sizeLimit: 10Gi
         - name: model-storage
-          nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift/models
+          emptyDir:
+            sizeLimit: 10Gi
         - name: local-cache
           emptyDir:
             sizeLimit: 10Gi  # Per-pod cache
