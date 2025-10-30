@@ -32,6 +32,7 @@ spec:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
       - PruneLast=true
+      - Replace=true  # Force replace instead of patch for immutable resources like Jobs
     retry:
       limit: 5
       backoff:

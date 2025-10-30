@@ -51,9 +51,10 @@ spec:
           selfHeal: true
           allowEmpty: false
         syncOptions:
-          - CreateNamespace=true
-          - PrunePropagationPolicy=foreground
-          - PruneLast=true
+          CreateNamespace=true
+          PrunePropagationPolicy=foreground
+          PruneLast=true
+          Replace=true
         retry:
           limit: 5
           backoff:
