@@ -16,6 +16,8 @@
    kubectl apply -f argocd/applicationset.yaml
    ```
 
+   **Note**: The ApplicationSet automatically creates both `nebulift-development` and `nebulift-production` applications. Do NOT also apply files from `argocd/applications/` - they are redundant!
+
 3. **Done!** ArgoCD now manages your deployments.
 
 ### Daily Workflow
