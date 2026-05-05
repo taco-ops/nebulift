@@ -1,0 +1,47 @@
+# Note: For Raspberry Pi clusters, we'll use hostPath volumes instead of PVCs
+# to allow shared access across pods. This file creates PVCs as placeholders
+# but the actual training job will use hostPath mounts.
+
+# Placeholder PVC - not used in training job
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-placeholder
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-models
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteOnce  # Per-pod storage
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Local cache storage for each pod
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nebulift-local-cache
+  labels:
+    app: nebulift-training
+spec:
+  accessModes:
+    - ReadWriteOnce  # Per-pod local storage
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi

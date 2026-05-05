@@ -1,0 +1,102 @@
+# NFS Server deployment to share storage from master node to all workers
+# This creates an NFS server on the master node that exports /mnt/cluster-storage
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  labels:
+    app: nfs-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      # Run NFS server on master node where storage is mounted
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+
+      containers:
+        - name: nfs-server
+          image: ubuntu:22.04
+          ports:
+            - name: nfs
+              containerPort: 2049
+            - name: mountd
+              containerPort: 20048
+            - name: rpcbind
+              containerPort: 111
+          securityContext:
+            privileged: true
+          env:
+            - name: SHARED_DIRECTORY
+              value: "/exports/cluster-storage"
+          volumeMounts:
+            - name: cluster-storage
+              mountPath: /exports/cluster-storage
+          command:
+            - bash
+            - -c
+            - |
+              echo "🚀 Installing and starting NFS server for cluster storage"
+
+              # Update package lists
+              apt-get update
+
+              # Install NFS server packages
+              DEBIAN_FRONTEND=noninteractive apt-get install -y nfs-kernel-server nfs-common
+
+              # Create exports directory if it doesn't exist
+              mkdir -p /exports/cluster-storage
+
+              # Configure NFS exports
+              echo "/exports/cluster-storage *(rw,sync,no_subtree_check,no_auth_nlm,insecure,no_root_squash)" > /etc/exports
+
+              # Start required services
+              service rpcbind start
+              service nfs-kernel-server start
+
+              # Export the filesystem
+              exportfs -rv
+
+              echo "✅ NFS server ready - exporting /exports/cluster-storage"
+              echo "📁 Contents:"
+              ls -la /exports/cluster-storage/
+
+              # Keep container running
+              tail -f /dev/null
+      volumes:
+        - name: cluster-storage
+          hostPath:
+            path: /mnt/cluster-storage
+            type: Directory
+
+---
+# Service to expose NFS server
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  labels:
+    app: nfs-server
+spec:
+  ports:
+    - name: nfs
+      port: 2049
+    - name: mountd
+      port: 20048
+    - name: rpcbind
+      port: 111
+  clusterIP: None  # Headless service
+  selector:
+    app: nfs-server

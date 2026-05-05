@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nebulift-environments
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: nebulift-applicationset
+    app.kubernetes.io/component: argocd-applicationset
+    app.kubernetes.io/part-of: nebulift
+spec:
+  generators:
+    - list:
+        elements:
+          - environment: development
+            targetRevision: develop
+            namespace: nebulift-dev
+            replicas: "2"
+          - environment: production
+            targetRevision: main
+            namespace: nebulift-training
+            replicas: "8"
+
+  template:
+    metadata:
+      name: 'nebulift-{{environment}}'
+      labels:
+        app.kubernetes.io/name: 'nebulift-{{environment}}'
+        app.kubernetes.io/component: ml-training
+        app.kubernetes.io/part-of: nebulift
+        environment: '{{environment}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: nebulift
+
+      source:
+        repoURL: https://github.com/taco-ops/nebulift.git
+        targetRevision: '{{targetRevision}}'
+        path: 'k8s/overlays/{{environment}}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          CreateNamespace=true
+          PrunePropagationPolicy=foreground
+          PruneLast=true
+          Replace=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+      revisionHistoryLimit: 10
+
+      ignoreDifferences:
+        - group: batch
+          kind: Job
+          name: nebulift-training
+          jsonPointers:
+            - /spec/selector
+            - /spec/template/metadata/labels
+
+      info:
+        - name: 'Repository'
+          value: 'https://github.com/taco-ops/nebulift'
+        - name: 'Environment'
+          value: '{{environment}}'
+        - name: 'Branch'
+          value: '{{targetRevision}}'

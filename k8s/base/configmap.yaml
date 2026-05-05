@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nebulift-training-config
+  labels:
+    app: nebulift-training
+data:
+  # Training parameters
+  learning_rate: "0.001"
+  batch_size: "32"
+  epochs: "50"
+  num_workers: "4"
+
+  # Data paths (mounted volumes)
+  train_data_path: "/data/train"
+  val_data_path: "/data/val"
+  model_output_path: "/models"
+
+  # Distributed training config
+  backend: "gloo"  # CPU-only backend for RPi5
+  init_method: "env://"
+
+  # Quality thresholds
+  quality_threshold: "0.7"
+  contamination_threshold: "0.3"
+
+  # Model architecture
+  model_name: "resnet18"
+  num_classes: "2"
+  dropout_rate: "0.5"
+
+  # Logging
+  log_level: "INFO"
+  checkpoint_interval: "10"
+
+  # Resource limits for RPi5
+  memory_limit: "2Gi"
+  cpu_limit: "2"

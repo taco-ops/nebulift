@@ -1,6 +1,7 @@
 # Nebulift: AI-Powered Astrophotography Quality Control 🚀
 
 [![CI/CD Pipeline](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml/badge.svg)](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/taco-ops/nebulift/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/taco-ops/nebulift/tree/main)
 [![codecov](https://codecov.io/gh/taco-ops/nebulift/branch/main/graph/badge.svg)](https://codecov.io/gh/taco-ops/nebulift)
 [![Latest Release](https://img.shields.io/github/v/release/taco-ops/nebulift?color=orange&include_prereleases)](https://github.com/taco-ops/nebulift/releases)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -144,6 +145,19 @@ uv run pytest -v                  # Run the test suite (67 tests!)
 uv run python test_model_persistence.py  # Test model save/load
 ```
 
+### CircleCI Training Pipeline
+
+Nebulift keeps source code in GitHub and can run Python validation from CircleCI using `.circleci/config.yml`.
+
+Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, and CLI training command checks. The full FITS training pipeline smoke test is gated behind the `run-training-pipeline` pipeline parameter because the local training pipeline implementation is still being completed.
+
+To connect CircleCI:
+
+1. Add the GitHub repository as a CircleCI project.
+2. Keep the config path as `.circleci/config.yml`.
+3. Trigger a normal pipeline for baseline CI.
+4. Trigger a manual pipeline with `run-training-pipeline=true` after the training pipeline functions are implemented.
+
 ### Hardware Requirements
 - **Minimum**: 4GB RAM, modern CPU
 - **Recommended**: 8GB RAM for large batches
@@ -202,4 +216,3 @@ MIT License - feel free to use this however you'd like! If it helps you capture 
 ## 📄 License & Credits
 
 This project demonstrates professional software development practices for scientific applications with distributed computing capabilities. The implementation follows modern Python standards and is designed for real-world astronomical image processing workflows across single nodes and Kubernetes clusters.
-

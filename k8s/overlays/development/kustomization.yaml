@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: nebulift-development
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+namespace: nebulift-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+commonLabels:
+  environment: development
+  deployment.kubernetes.io/environment: development
+
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "1"
+
+images:
+  - name: ghcr.io/taco-ops/nebulift
+    newTag: latest  # Use latest tag available in registry
+
+patchesStrategicMerge:
+  - training-job-patch.yaml
+
+configMapGenerator:
+  - name: nebulift-training-config
+    files:
+      - training-dev.conf
+    behavior: replace
+    options:
+      disableNameSuffixHash: true

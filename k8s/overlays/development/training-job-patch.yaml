@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nebulift-training
+  labels:
+    environment: development
+spec:
+  parallelism: 2  # Minimal for development
+  completions: 2
+  backoffLimit: 5  # More forgiving for development
+  template:
+    spec:
+      containers:
+        - name: nebulift-trainer
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "0.5"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+          env:
+            - name: WORLD_SIZE
+              value: "2"
+            - name: ENVIRONMENT
+              value: "development"
+            - name: LOG_LEVEL
+              value: "DEBUG"
+            - name: DEBUG_MODE
+              value: "true"
