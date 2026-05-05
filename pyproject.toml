@@ -1,7 +1,7 @@
 [project]
 name = "nebulift"
 version = "0.4.0"
-description = "Automated Quality Assessment for Astrophotography Images"
+description = "FITS-native astrophotography quality control and model training"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Astronomy",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]

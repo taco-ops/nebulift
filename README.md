@@ -262,6 +262,9 @@ print(results["dataset_stats"])
 uv run pytest tests/ -v
 uv run python test_training_pipeline.py
 uv run python test_model_persistence.py
+uv run python -m nebulift --help
+uv build
+uv run python -m twine check dist/*
 uv run black --check --diff .
 uv run flake8 nebulift/ tests/
 uv run mypy nebulift/ --ignore-missing-imports
@@ -271,7 +274,7 @@ uv run mypy nebulift/ --ignore-missing-imports
 
 Nebulift keeps source code in GitHub and uses CircleCI as the primary CI system through `.circleci/config.yml`.
 
-Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, and CLI training command checks.
+Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, local workflow CLI help checks, focused CLI workflow tests, and package build/metadata validation.
 
 The full FITS training pipeline smoke test is available through the manual `run-training-pipeline=true` pipeline parameter. Use it when validating training changes because it is more expensive than the baseline checks.
 
