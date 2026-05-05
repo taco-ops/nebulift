@@ -2,13 +2,15 @@
 ResNet18 Model for Astrophotography Quality Assessment
 
 Implements a ResNet18-based neural network for binary classification of
-astronomical images as "clean" or "contaminated" with artifacts.
+astronomical images as "contaminated", "clean", or "review".
 Optimized for CPU-only inference on resource-constrained devices like Raspberry Pi 5.
 """
 
+import csv
 import logging
+import random
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -23,13 +25,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+LABEL_CONTAMINATED = 0
+LABEL_CLEAN = 1
+LABEL_REVIEW = 2
+LABEL_NAMES = {
+    LABEL_CONTAMINATED: "contaminated",
+    LABEL_CLEAN: "clean",
+    LABEL_REVIEW: "review",
+}
+
 
 class AstroImageDataset(Dataset):
     """Dataset class for astronomical images with quality labels."""
 
     def __init__(
         self,
-        image_paths: list[str],
+        image_paths: list[Union[str, Path]],
         labels: list[int],
         transform: Optional[transforms.Compose] = None,
         fits_processor: Optional["FITSProcessor"] = None,
@@ -39,7 +50,7 @@ class AstroImageDataset(Dataset):
 
         Args:
             image_paths: List of paths to image files
-            labels: List of labels (0=contaminated, 1=clean)
+            labels: List of labels (0=contaminated, 1=clean, 2=review)
             transform: Optional image transforms
             fits_processor: FITSProcessor instance for loading FITS files
         """
@@ -56,13 +67,18 @@ class AstroImageDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
         """Get a single item from the dataset."""
         image_path = self.image_paths[idx]
+        image_path_str = str(image_path)
         label = self.labels[idx]
 
         try:
             # Load image
-            if self.fits_processor and image_path.endswith((".fits", ".fit", ".fts")):
+            if self.fits_processor and image_path_str.endswith(
+                (".fits", ".fit", ".fts"),
+            ):
                 # Load FITS file
-                processed_data = self.fits_processor.process_fits_file(Path(image_path))
+                processed_data = self.fits_processor.process_fits_file(
+                    Path(image_path_str),
+                )
                 if processed_data is None:
                     raise ValueError(f"Could not load FITS file: {image_path}")
 
@@ -427,7 +443,7 @@ class QualityPredictor:
         self,
         image_path: str,
         fits_processor: Optional["FITSProcessor"] = None,
-    ) -> dict[str, Union[float, bool, str]]:
+    ) -> dict[str, Any]:
         """
         Predict quality for a single image.
 
@@ -463,27 +479,45 @@ class QualityPredictor:
                 output = self.model(image_tensor)
                 probabilities = torch.softmax(output, dim=1)
 
-                contaminated_prob = probabilities[0][0].item()
-                clean_prob = probabilities[0][1].item()
-
-                predicted_class = torch.argmax(output, dim=1).item()
-                confidence = max(contaminated_prob, clean_prob)
+                predicted_class = int(torch.argmax(output, dim=1).item())
+                class_probabilities = {
+                    LABEL_NAMES.get(index, f"class_{index}"): probabilities[0][
+                        index
+                    ].item()
+                    for index in range(probabilities.shape[1])
+                }
+                contaminated_prob = class_probabilities.get("contaminated", 0.0)
+                clean_prob = class_probabilities.get("clean", 0.0)
+                review_prob = class_probabilities.get("review", 0.0)
+                confidence = max(class_probabilities.values())
 
             return {
-                "predicted_class": predicted_class,  # 0=contaminated, 1=clean
+                "predicted_class": predicted_class,
+                "predicted_label": LABEL_NAMES.get(
+                    predicted_class, str(predicted_class)
+                ),
                 "confidence": confidence,
                 "contaminated_probability": contaminated_prob,
                 "clean_probability": clean_prob,
-                "is_clean": predicted_class == 1,
+                "review_probability": review_prob,
+                "class_probabilities": class_probabilities,
+                "is_clean": predicted_class == LABEL_CLEAN,
             }
 
         except Exception as e:
             logger.error(f"Error predicting quality for {image_path}: {e}")
             return {
                 "predicted_class": 0,
+                "predicted_label": "contaminated",
                 "confidence": 0.0,
                 "contaminated_probability": 1.0,
                 "clean_probability": 0.0,
+                "review_probability": 0.0,
+                "class_probabilities": {
+                    "contaminated": 1.0,
+                    "clean": 0.0,
+                    "review": 0.0,
+                },
                 "is_clean": False,
                 "error": str(e),
             }  # type: ignore[dict-item]
@@ -492,7 +526,7 @@ class QualityPredictor:
         self,
         image_paths: list[str],
         fits_processor: Optional["FITSProcessor"] = None,
-    ) -> dict[str, dict[str, Union[float, bool, str]]]:
+    ) -> dict[str, dict[str, Any]]:
         """
         Predict quality for a batch of images.
 
@@ -544,6 +578,282 @@ def create_data_transforms(train: bool = True) -> transforms.Compose:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ],
     )
+
+
+def _validate_label_thresholds(
+    clean_threshold: float,
+    contaminated_threshold: float,
+) -> None:
+    if not 0.0 <= contaminated_threshold <= 1.0:
+        raise ValueError("contaminated_threshold must be between 0.0 and 1.0")
+    if not 0.0 <= clean_threshold <= 1.0:
+        raise ValueError("clean_threshold must be between 0.0 and 1.0")
+    if contaminated_threshold >= clean_threshold:
+        raise ValueError("contaminated_threshold must be lower than clean_threshold")
+
+
+def _label_from_quality_score(
+    quality_score: float,
+    clean_threshold: float,
+    contaminated_threshold: float,
+) -> int:
+    if quality_score >= clean_threshold:
+        return LABEL_CLEAN
+    if quality_score <= contaminated_threshold:
+        return LABEL_CONTAMINATED
+    return LABEL_REVIEW
+
+
+def _generate_cv_label_records(
+    fits_files: Sequence[Union[str, Path]],
+    artifact_detector: Optional[Any] = None,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+    fits_processor: Optional["FITSProcessor"] = None,
+) -> list[dict[str, Any]]:
+    _validate_label_thresholds(clean_threshold, contaminated_threshold)
+
+    if artifact_detector is None:
+        from .cv_prefilter import ArtifactDetector
+
+        artifact_detector = ArtifactDetector()
+
+    if fits_processor is None:
+        from .fits_processor import FITSProcessor
+
+        fits_processor = FITSProcessor()
+
+    records = []
+    for fits_file in fits_files:
+        path = Path(fits_file)
+        processed = fits_processor.process_fits_file(path)
+        if processed is None:
+            logger.warning(f"Skipping unreadable FITS file: {path}")
+            continue
+
+        analysis = artifact_detector.comprehensive_analysis(
+            processed["normalized_image"]
+        )
+        quality_score = float(analysis["overall_quality_score"])
+        label = _label_from_quality_score(
+            quality_score,
+            clean_threshold,
+            contaminated_threshold,
+        )
+        records.append(
+            {
+                "path": path,
+                "label": label,
+                "label_name": LABEL_NAMES[label],
+                "quality_score": quality_score,
+                "needs_manual_review": bool(analysis["needs_manual_review"]),
+            },
+        )
+
+    return records
+
+
+def generate_training_labels_from_cv(
+    fits_files: Sequence[Union[str, Path]],
+    artifact_detector: Optional[Any] = None,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+    fits_processor: Optional["FITSProcessor"] = None,
+) -> tuple[list[Path], list[int], list[Path]]:
+    """
+    Generate three-class training labels from CV quality scores.
+
+    Labels are 0=contaminated, 1=clean, and 2=review. Review files are also
+    returned separately so callers can inspect borderline cases.
+    """
+    records = _generate_cv_label_records(
+        fits_files,
+        artifact_detector,
+        clean_threshold,
+        contaminated_threshold,
+        fits_processor,
+    )
+    labeled_files = [record["path"] for record in records]
+    labels = [record["label"] for record in records]
+    review_files = [
+        record["path"] for record in records if record["label"] == LABEL_REVIEW
+    ]
+    return labeled_files, labels, review_files
+
+
+def _write_manifest(
+    manifest_path: Path, records: list[dict[str, Any]], split: str
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", newline="") as manifest_file:
+        writer = csv.DictWriter(
+            manifest_file,
+            fieldnames=[
+                "split",
+                "path",
+                "label",
+                "label_name",
+                "quality_score",
+                "needs_manual_review",
+            ],
+        )
+        writer.writeheader()
+        for record in records:
+            writer.writerow(
+                {
+                    "split": split,
+                    "path": str(record["path"]),
+                    "label": record["label"],
+                    "label_name": record["label_name"],
+                    "quality_score": f"{record['quality_score']:.6f}",
+                    "needs_manual_review": record["needs_manual_review"],
+                },
+            )
+
+
+def create_dataset_from_cv_labels(
+    fits_files: Sequence[Union[str, Path]],
+    artifact_detector: Optional[Any] = None,
+    output_dir: Union[str, Path] = "dataset",
+    train_split: float = 0.8,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+    random_seed: int = 42,
+) -> tuple[AstroImageDataset, AstroImageDataset, list[Path]]:
+    """Create train/validation datasets from CV-generated FITS labels."""
+    if not 0.0 < train_split < 1.0:
+        raise ValueError("train_split must be between 0.0 and 1.0")
+
+    from .fits_processor import FITSProcessor
+
+    output_path = Path(output_dir)
+    fits_processor = FITSProcessor()
+    records = _generate_cv_label_records(
+        fits_files,
+        artifact_detector,
+        clean_threshold,
+        contaminated_threshold,
+        fits_processor,
+    )
+    if len(records) < 2:
+        raise ValueError("At least two readable FITS files are required for training")
+
+    random.Random(random_seed).shuffle(records)  # nosec B311 - deterministic split only
+    split_index = int(len(records) * train_split)
+    split_index = min(max(split_index, 1), len(records) - 1)
+
+    train_records = records[:split_index]
+    val_records = records[split_index:]
+    review_files = [
+        record["path"] for record in records if record["label"] == LABEL_REVIEW
+    ]
+
+    _write_manifest(output_path / "train_manifest.csv", train_records, "train")
+    _write_manifest(output_path / "val_manifest.csv", val_records, "val")
+
+    train_dataset = AstroImageDataset(
+        [record["path"] for record in train_records],
+        [record["label"] for record in train_records],
+        transform=create_data_transforms(train=True),
+        fits_processor=fits_processor,
+    )
+    val_dataset = AstroImageDataset(
+        [record["path"] for record in val_records],
+        [record["label"] for record in val_records],
+        transform=create_data_transforms(train=False),
+        fits_processor=fits_processor,
+    )
+
+    return train_dataset, val_dataset, review_files
+
+
+def _find_fits_files(fits_directory: Union[str, Path]) -> list[Path]:
+    fits_path = Path(fits_directory)
+    patterns = ["*.fits", "*.fit", "*.fts"]
+    fits_files: list[Path] = []
+    for pattern in patterns:
+        fits_files.extend(fits_path.rglob(pattern))
+    return sorted(set(fits_files))
+
+
+def complete_training_pipeline(
+    fits_directory: Union[str, Path],
+    model_output_path: Union[str, Path],
+    dataset_output_dir: Union[str, Path],
+    epochs: int = 20,
+    batch_size: int = 32,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+    train_split: float = 0.8,
+    device: Optional[str] = None,
+    pretrained: bool = False,
+) -> dict[str, Any]:
+    """Run FITS discovery, CV labeling, dataset creation, and model training."""
+    if epochs < 1:
+        raise ValueError("epochs must be at least 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
+    fits_files = _find_fits_files(fits_directory)
+    if len(fits_files) < 2:
+        raise ValueError(f"At least two FITS files are required in {fits_directory}")
+
+    train_dataset, val_dataset, review_files = create_dataset_from_cv_labels(
+        fits_files=fits_files,
+        output_dir=dataset_output_dir,
+        train_split=train_split,
+        clean_threshold=clean_threshold,
+        contaminated_threshold=contaminated_threshold,
+    )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = AstroQualityClassifier(num_classes=3, pretrained=pretrained)
+    trainer = ModelTrainer(model, device=device)
+    history = trainer.train(train_loader, val_loader, epochs=epochs)
+    trainer.save_model(model_output_path)
+
+    label_counts = {
+        LABEL_NAMES[label]: train_dataset.labels.count(label)
+        + val_dataset.labels.count(label)
+        for label in LABEL_NAMES
+    }
+
+    return {
+        "model_path": str(model_output_path),
+        "dataset_dir": str(dataset_output_dir),
+        "history": history,
+        "final_metrics": {
+            "best_val_accuracy": (
+                max(trainer.val_accuracies) if trainer.val_accuracies else 0.0
+            ),
+            "final_val_accuracy": (
+                trainer.val_accuracies[-1] if trainer.val_accuracies else 0.0
+            ),
+            "final_val_loss": trainer.val_losses[-1] if trainer.val_losses else 0.0,
+        },
+        "dataset_stats": {
+            "total_files": len(fits_files),
+            "training_samples": len(train_dataset),
+            "validation_samples": len(val_dataset),
+            "review_samples": len(review_files),
+            "label_counts": label_counts,
+        },
+    }
 
 
 def optimize_model_for_inference(model: nn.Module) -> nn.Module:

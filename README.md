@@ -1,4 +1,4 @@
-# Nebulift: AI-Powered Astrophotography Quality Control 🚀
+# Nebulift: Astrophotography Quality Control
 
 [![CI/CD Pipeline](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml/badge.svg)](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml)
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/taco-ops/nebulift/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/taco-ops/nebulift/tree/main)
@@ -7,212 +7,219 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://hub.docker.com)
 [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io)
 
-*Tired of manually sorting through thousands of astrophotos to find the keepers?* **Nebulift** is here to help! 🌟
+Nebulift is a beta Python tool for quality assessment of astronomical FITS images. It uses traditional computer vision to detect common acquisition artifacts and can train a ResNet18 classifier from CV-generated labels.
 
-This **beta** system automatically identifies and filters out contaminated astronomical images using a hybrid approach: traditional computer vision for artifact detection + ResNet18 deep learning for quality assessment. Built specifically for telescope data in FITS format, it can run anywhere from your laptop to a Raspberry Pi 5 cluster.
+The current focus is a reliable local CLI workflow for FITS files. Kubernetes, Argo CD, and distributed training resources are present for future deployment work, but they should be treated as scaffolding until validated with real datasets and cluster storage.
 
-**🧪 Beta Status**: Core functionality is complete with enterprise-grade infrastructure, but we're actively seeking real-world testing and feedback from the astrophotography community before our 1.0 release.
+## Use Case
 
-## 🎯 Why Nebulift?
+Astrophotography sessions often produce many FITS frames that need to be reviewed before stacking. Nebulift helps identify likely clean, contaminated, and borderline frames so users can reduce manual inspection time.
 
-**The Problem**: After a night of imaging, you're left with hundreds or thousands of photos. Some are crystal clear, others have satellite streaks, airplane trails, clouds, or other artifacts that would ruin your final stack. Manually sorting through them all? Ain't nobody got time for that! 😅
+Current categories:
 
-**The Solution**: Nebulift automatically analyzes your images and sorts them into three categories:
-- ✨ **Clean**: Ready for stacking 
-- 🗑️ **Contaminated**: Save yourself the headache, skip these
-- 🤔 **Review**: Borderline cases that might need a human eye
+- `clean`: likely suitable for stacking
+- `contaminated`: likely affected by streaks, cloud cover, saturation, hot pixels, or other artifacts
+- `review`: borderline cases that should be inspected manually
 
-## 🚀 What Makes It Special?
+## Current Status
 
-- **🔭 FITS-Native**: Built specifically for astronomical data (though it handles regular images too)
-- **💻 CPU-Only**: No expensive GPU needed - runs great on Raspberry Pi 5!
-- **🤖 Hybrid Intelligence**: CV algorithms + ResNet18 = better accuracy than either alone
-- **🏗️ Enterprise Infrastructure**: Comprehensive CI/CD, testing, and container deployment
-- **📈 Scalable**: From single images to distributed training on Kubernetes clusters
-- **🎛️ Semi-Automated**: Generate training labels from CV analysis, then train custom models
+Implemented:
 
-## �️ Quick Start (Get Running in 2 Minutes!)
+- FITS loading, metadata extraction, normalization, and ML-ready resizing
+- Computer vision artifact detection for streaks, clouds, saturation, hot pixels, and quality scoring
+- Batch analysis of FITS files with JSON manifest output
+- Three-class CV-generated labels: `contaminated`, `clean`, and `review`
+- Optional ML-assisted classification for `analyze` and `batch` when a model checkpoint is provided
+- Optional batch moving into class buckets with `--action move`
+- Interactive terminal review of batch manifests
+- Local FITS-to-model training pipeline through `nebulift train-from-fits`
+- Model checkpointing, metadata, and versioning utilities
+- Docker, Kubernetes, Kustomize, Argo CD, GitHub Actions, and CircleCI configuration
 
-**Prerequisites**: Python 3.9+ and either `uv` (recommended) or `pip`
+Not yet complete:
 
-### Installation
+- Batch review currently updates JSON manifests only; it does not display images or write curated datasets
+- Regular image analysis is supported by lower-level CV utilities, but the primary CLI workflow is FITS-oriented
+- No pretrained Nebulift model is currently shipped with the repository
+- Distributed Kubernetes training still needs real dataset mounting, model persistence, and end-to-end validation
+
+## Installation
+
+Prerequisites:
+
+- Python 3.9 or newer
+- `uv` is recommended for local development
+
 ```bash
-# Clone and enter the project
 git clone https://github.com/taco-ops/nebulift.git
 cd nebulift
 
-# Option 1: Using uv (faster, recommended)
-pip install uv  # If you don't have uv yet
-uv sync         # Install everything
+pip install uv
+uv sync --all-extras --dev
+```
 
-# Option 2: Traditional pip approach
+For a minimal editable install without development tooling:
+
+```bash
 pip install -e .
 ```
 
-### 🎯 Try It Out!
+## CLI Usage
 
-**Single Image Analysis** (great for testing):
+### Analyze One FITS File
+
 ```bash
-# Analyze a single FITS file
-uv run nebulift analyze my_awesome_nebula.fits
-
-# Or with a regular image
-uv run nebulift analyze moon_shot.jpg
+uv run nebulift analyze /path/to/image.fits
 ```
 
-**Batch Processing** (the real power):
-```bash
-# Sort an entire night's worth of images
-uv run nebulift batch /path/to/raw/images /path/to/sorted/output
+This runs CV-based analysis and reports a quality score, detected artifacts, review status, CV label, and final decision label.
 
-# This creates three folders:
-# - clean/        <- Your best images, ready for stacking!
-# - contaminated/ <- Skip these ones
-# - review/       <- Borderline cases to check manually
+Use a trained model checkpoint for ML-assisted classification:
+
+```bash
+uv run nebulift analyze /path/to/image.fits \
+    --model models/custom_classifier.pth
 ```
 
-**Want to get your hands dirty with the code?** Here's how:
+### Batch Sort FITS Files
+
+```bash
+uv run nebulift batch /path/to/raw/fits /path/to/sorted/output
+```
+
+By default, `batch` is report-only. It writes `/path/to/sorted/output/batch_manifest.json` and does not copy or move source files.
+
+Use `--action move` to move files into class buckets:
+
+```bash
+uv run nebulift batch /path/to/raw/fits /path/to/sorted/output \
+    --action move
+```
+
+Move mode creates:
+
+- `clean/`
+- `contaminated/`
+- `review/`
+
+Use a trained model checkpoint during batch classification:
+
+```bash
+uv run nebulift batch /path/to/raw/fits /path/to/sorted/output \
+    --model models/custom_classifier.pth
+```
+
+When `--model` is provided and inference succeeds, the model label becomes the decision label. The manifest still records the CV label, quality score, decision source, artifact flags, and model prediction.
+
+### Review a Batch Manifest
+
+```bash
+uv run nebulift review /path/to/sorted/output/batch_manifest.json
+```
+
+The review command prompts for corrected labels in the terminal and updates the manifest in place. It currently supports label correction only; it does not display image previews.
+
+### Train From FITS Files
+
+```bash
+uv run nebulift train-from-fits /path/to/fits/session \
+    --model_output models/custom_classifier.pth \
+    --dataset_dir datasets/session_training \
+    --epochs 50 \
+    --batch_size 32 \
+    --clean_threshold 0.7 \
+    --contaminated_threshold 0.3
+```
+
+This workflow:
+
+1. Finds FITS files in the input directory.
+2. Processes each file with `FITSProcessor`.
+3. Runs CV artifact detection with `ArtifactDetector`.
+4. Assigns one of three labels based on quality thresholds.
+5. Writes train and validation manifests into `--dataset_dir`.
+6. Trains a three-class ResNet18 model.
+7. Saves the model checkpoint and metadata to `--model_output`.
+
+Threshold behavior:
+
+- `score >= clean_threshold`: `clean`
+- `score <= contaminated_threshold`: `contaminated`
+- scores between thresholds: `review`
+
+## Python API Example
 
 ```python
-from nebulift.fits_processor import FITSProcessor
-from nebulift.cv_prefilter import ArtifactDetector
+from pathlib import Path
 
-# Initialize the components
-processor = FITSProcessor()
-detector = ArtifactDetector()
+from nebulift.ml_model import complete_training_pipeline
 
-# Load and process a FITS file
-fits_data = processor.load_fits_file("your_image.fits")
-normalized = processor.normalize_image(fits_data['image_data'])
+results = complete_training_pipeline(
+    fits_directory=Path("/data/fits/session"),
+    model_output_path=Path("models/session_classifier.pth"),
+    dataset_output_dir=Path("datasets/session_training"),
+    epochs=20,
+    batch_size=16,
+    clean_threshold=0.7,
+    contaminated_threshold=0.3,
+)
 
-# Run the analysis
-analysis = detector.comprehensive_analysis(normalized)
-
-print(f"Quality score: {analysis['overall_quality_score']:.3f}")
-print(f"Has streaks: {analysis['streaks']['has_streaks']}")
-print(f"Recommended action: {'Keep' if analysis['overall_quality_score'] > 0.7 else 'Review' if analysis['overall_quality_score'] > 0.3 else 'Discard'}")
+print(results["final_metrics"])
+print(results["dataset_stats"])
 ```
 
-## 🧠 Train Your Own Models (Advanced Users)
+## Validation
 
-Got specific needs? Train a custom model on your own data! The system makes this surprisingly straightforward:
-
-**One-Command Training Pipeline**:
 ```bash
-# Train a model from your FITS files (uses CV analysis to generate labels)
-uv run nebulift train-from-fits /path/to/telescope/session/ \
-    --model_output models/my_custom_classifier.pth \
-    --dataset_dir datasets/organized \
-    --epochs 50 \
-    --clean_threshold 0.8  # How picky should we be?
+uv run pytest tests/ -v
+uv run python test_training_pipeline.py
+uv run python test_model_persistence.py
+uv run black --check --diff .
+uv run flake8 nebulift/ tests/
+uv run mypy nebulift/ --ignore-missing-imports
 ```
 
-This will:
-1. Analyze all your images with computer vision algorithms
-2. Generate training labels based on quality scores
-3. Organize files into training/validation sets
-4. Train a ResNet18 model
-5. Save everything for future use
+## CircleCI
 
-**Scale Up with Kubernetes** (for the truly ambitious):
-```bash
-# Deploy to your Raspberry Pi 5 cluster
-docker build -t nebulift:latest .
-kubectl apply -f k8s/
-kubectl logs -f job/nebulift-training
+Nebulift keeps source code in GitHub and can run validation from CircleCI using `.circleci/config.yml`.
 
-# Need more power? Scale it up!
-kubectl patch job nebulift-training -p '{"spec":{"parallelism":8}}'
-```
+Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, and CLI training command checks.
 
-## 🚦 Project Status
+The full FITS training pipeline smoke test is available through the manual `run-training-pipeline=true` pipeline parameter. Use it when validating training changes because it is more expensive than the baseline checks.
 
-**Current State**: Ready for Real-World Testing! 🧪  
-- ✅ **Container images** ready for deployment
-- ✅ **Model persistence** with versioning and metadata
-- ✅ **Distributed training** infrastructure
+## Deployment Resources
 
-## 🧪 Validation & Testing
+The repository includes Kubernetes and Argo CD resources for future distributed training workflows:
 
-**Want to make sure everything's working?** Run the validation:
-```bash
-uv run python validate_system.py  # Full end-to-end test
-uv run pytest -v                  # Run the test suite (67 tests!)
-uv run python test_model_persistence.py  # Test model save/load
-```
+- `k8s/`: base manifests and Kustomize overlays
+- `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources
+- `nebulift/distributed/`: PyTorch distributed training utilities
 
-### CircleCI Training Pipeline
+These resources are useful for infrastructure iteration, but the local training pipeline is the primary supported path today.
 
-Nebulift keeps source code in GitHub and can run Python validation from CircleCI using `.circleci/config.yml`.
+## Hardware Notes
 
-Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, and CLI training command checks. The full FITS training pipeline smoke test is gated behind the `run-training-pipeline` pipeline parameter because the local training pipeline implementation is still being completed.
+- Minimum local use: modern CPU and 4 GB RAM
+- Recommended for training: 8 GB RAM or more
+- GPU is optional; the project defaults to CPU-compatible behavior
+- Raspberry Pi 5 support is a design target, but real-world performance validation is still needed
 
-To connect CircleCI:
+## Contributing
 
-1. Add the GitHub repository as a CircleCI project.
-2. Keep the config path as `.circleci/config.yml`.
-3. Trigger a normal pipeline for baseline CI.
-4. Trigger a manual pipeline with `run-training-pipeline=true` after the training pipeline functions are implemented.
+Useful areas for contribution:
 
-### Hardware Requirements
-- **Minimum**: 4GB RAM, modern CPU
-- **Recommended**: 8GB RAM for large batches
-- **Raspberry Pi 5**: Fully supported (CPU-only mode)
-- **GPU**: Optional (CPU mode is default and recommended)
-- **Distributed**: Kubernetes cluster with NFS storage for multi-node training
+- Real FITS dataset validation
+- Curated-label import from reviewed JSON manifests
+- Pretrained model packaging or download workflow
+- Distributed training integration with real storage
+- CLI integration tests
+- Documentation corrections based on real deployments
 
-### Distributed Training Architecture
+Open an issue or pull request with the dataset, environment, command, and observed behavior whenever possible.
 
-The system supports distributed training across Kubernetes clusters using PyTorch's DistributedDataParallel:
+## License
 
-#### Components
-- **K8sDistributedTrainer**: Extends base ModelTrainer with distributed capabilities
-- **Data Sharding**: Automatic dataset distribution across training nodes
-- **Model Aggregation**: Synchronous gradient aggregation using all-reduce operations
-- **Kubernetes Integration**: Native K8s job orchestration with persistent storage
-
-## We Need Your Help!
-
-**Are you an astrophotographer?** We'd love your feedback! Here's how you can help us make Nebulift better:
-
-### 🔬 What We're Looking For
-- **Real telescope data**: Test with your actual FITS files from different telescopes/cameras
-- **Edge cases**: Unusual lighting conditions, rare artifacts, specific telescope configurations
-- **Performance feedback**: How does it run on your hardware? (Especially Raspberry Pi setups!)
-- **Workflow integration**: Does it fit into your existing image processing pipeline?
-
-### 📊 Easy Ways to Contribute
-1. **Try it out**: Download and test on a small batch of your images
-2. **Report results**: Open an issue with your experience (good or bad!)
-3. **Share data**: If willing, share problematic images that don't classify correctly
-4. **Suggest features**: What would make this more useful for your workflow?
-
-**Contact**: Open a GitHub issue or discussion - we're actively monitoring and will respond quickly!
-
-## �🤝 Contributing & Community
-
-**Found a bug?** Open an issue! **Have an idea?** We'd love to hear it! **Want to contribute?** PRs are welcome!
-
-## 🙏 Acknowledgments
-
-Built with love for the astrophotography community. Special thanks to:
-- The **PyTorch** team for making distributed training accessible
-- **Astropy** developers for excellent FITS file handling
-- The **Kubernetes** ecosystem for making container orchestration smooth
-- Everyone who's ever spent a cold night under the stars capturing photons ✨
-
-## � License
-
-MIT License - feel free to use this however you'd like! If it helps you capture better images of the cosmos, we've done our job. 🌌
-
----
-
-*Happy imaging, and may your nights be clear and your satellites be few!* 🚀🌟  
-
-## 📄 License & Credits
-
-This project demonstrates professional software development practices for scientific applications with distributed computing capabilities. The implementation follows modern Python standards and is designed for real-world astronomical image processing workflows across single nodes and Kubernetes clusters.
+MIT License. See the repository license for details.

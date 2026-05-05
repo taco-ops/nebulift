@@ -12,11 +12,16 @@ import torch
 from torch import nn
 
 from nebulift.ml_model import (
+    LABEL_CLEAN,
+    LABEL_CONTAMINATED,
+    LABEL_REVIEW,
     AstroImageDataset,
     AstroQualityClassifier,
     ModelTrainer,
     QualityPredictor,
     create_data_transforms,
+    create_dataset_from_cv_labels,
+    generate_training_labels_from_cv,
     optimize_model_for_inference,
 )
 
@@ -294,6 +299,82 @@ class TestQualityPredictor:
 
 class TestUtilityFunctions:
     """Test cases for utility functions."""
+
+    def test_generate_training_labels_from_cv_three_classes(self):
+        """Test CV-generated labels include contaminated, clean, and review."""
+        mock_processor = Mock()
+        mock_processor.process_fits_file.return_value = {
+            "normalized_image": np.zeros((16, 16)),
+        }
+        mock_detector = Mock()
+        mock_detector.comprehensive_analysis.side_effect = [
+            {"overall_quality_score": 0.2, "needs_manual_review": False},
+            {"overall_quality_score": 0.5, "needs_manual_review": True},
+            {"overall_quality_score": 0.9, "needs_manual_review": False},
+        ]
+
+        labeled_files, labels, review_files = generate_training_labels_from_cv(
+            ["bad.fits", "borderline.fits", "good.fits"],
+            artifact_detector=mock_detector,
+            clean_threshold=0.7,
+            contaminated_threshold=0.3,
+            fits_processor=mock_processor,
+        )
+
+        assert [path.name for path in labeled_files] == [
+            "bad.fits",
+            "borderline.fits",
+            "good.fits",
+        ]
+        assert labels == [LABEL_CONTAMINATED, LABEL_REVIEW, LABEL_CLEAN]
+        assert [path.name for path in review_files] == ["borderline.fits"]
+
+    def test_create_dataset_from_cv_labels_writes_manifests(self, tmp_path):
+        """Test dataset creation splits records and writes CSV manifests."""
+        records = [
+            {
+                "path": tmp_path / "bad.fits",
+                "label": LABEL_CONTAMINATED,
+                "label_name": "contaminated",
+                "quality_score": 0.1,
+                "needs_manual_review": False,
+            },
+            {
+                "path": tmp_path / "review.fits",
+                "label": LABEL_REVIEW,
+                "label_name": "review",
+                "quality_score": 0.5,
+                "needs_manual_review": True,
+            },
+            {
+                "path": tmp_path / "good_1.fits",
+                "label": LABEL_CLEAN,
+                "label_name": "clean",
+                "quality_score": 0.8,
+                "needs_manual_review": False,
+            },
+            {
+                "path": tmp_path / "good_2.fits",
+                "label": LABEL_CLEAN,
+                "label_name": "clean",
+                "quality_score": 0.9,
+                "needs_manual_review": False,
+            },
+        ]
+
+        with patch("nebulift.ml_model._generate_cv_label_records") as mock_generate:
+            mock_generate.return_value = records
+            train_dataset, val_dataset, review_files = create_dataset_from_cv_labels(
+                [record["path"] for record in records],
+                output_dir=tmp_path / "dataset",
+                train_split=0.75,
+            )
+
+        assert len(train_dataset) == 3
+        assert len(val_dataset) == 1
+        assert [path.name for path in review_files] == ["review.fits"]
+        assert (tmp_path / "dataset" / "train_manifest.csv").exists()
+        assert (tmp_path / "dataset" / "val_manifest.csv").exists()
 
     def test_create_data_transforms_train(self):
         """Test creation of training transforms."""

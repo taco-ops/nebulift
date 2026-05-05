@@ -1,116 +1,66 @@
-# Nebulift ArgoCD Quick Start
+# Nebulift Argo CD Quick Start
 
-## TL;DR - GitOps Deployment
+## Purpose
 
-### One-Time Setup (5 minutes)
+This guide describes the shortest path to register the Nebulift Kubernetes resources with Argo CD. Use it after Argo CD is already installed and reachable from your workstation.
 
-1. **Login to ArgoCD**:
+## One-Time Setup
+
+1. Log in to Argo CD:
+
    ```bash
    argocd login argocd.spacedojo.local --insecure
    ```
 
-2. **Deploy ArgoCD resources** (one time only):
+2. Apply the Nebulift Argo CD resources from the repository root:
+
    ```bash
-   # From the repo root
    kubectl apply -f argocd/projects/nebulift-project.yaml
    kubectl apply -f argocd/applicationset.yaml
    ```
 
-   **Note**: The ApplicationSet automatically creates both `nebulift-development` and `nebulift-production` applications. Do NOT also apply files from `argocd/applications/` - they are redundant!
+3. Verify that applications were created:
 
-3. **Done!** ArgoCD now manages your deployments.
+   ```bash
+   argocd app list | grep nebulift
+   ```
 
-### Daily Workflow
+The ApplicationSet creates both `nebulift-development` and `nebulift-production`. Do not also apply the individual files in `argocd/applications/` unless you are intentionally replacing the ApplicationSet model.
 
-**To deploy changes, just use Git:**
+## Environment Mapping
+
+- `develop` branch deploys to the `nebulift-dev` namespace.
+- `main` branch deploys to the `nebulift-training` namespace.
+
+## Daily Workflow
+
+Use Git as the source of truth for deployment changes:
 
 ```bash
-# Make your changes
 vim k8s/overlays/production/training-prod.conf
-
-# Commit and push
-git add .
+git add k8s/overlays/production/training-prod.conf
 git commit -m "Update training parameters"
 git push origin main
-
-# ArgoCD automatically deploys within ~3 minutes
 ```
 
-**No kubectl apply needed!** ArgoCD watches Git and deploys automatically.
+Argo CD detects the Git change and reconciles the target environment according to the ApplicationSet configuration.
 
-## What Was Created?
-
-After applying the ArgoCD resources, you have:
-
-✅ **Development environment** (`nebulift-dev` namespace)
-- Watches: `develop` branch
-- 2 training pods
-- Auto-syncs on every commit to `develop`
-
-✅ **Production environment** (`nebulift-training` namespace)  
-- Watches: `main` branch
-- 8 training pods
-- Auto-syncs on every commit to `main`
-
-## View Your Applications
+## View Applications
 
 ```bash
-# CLI
 argocd app list | grep nebulift
 argocd app get nebulift-production
-
-# Web UI
-# Open: https://argocd.spacedojo.local
 ```
 
-## Making Changes
+If using the web UI, open your Argo CD endpoint and inspect the `nebulift-development` or `nebulift-production` application.
 
-### Update Training Configuration
+## Common Operations
 
 ```bash
-# Edit config
-vim k8s/overlays/production/training-prod.conf
-
-# Commit and push
-git commit -am "Increase batch size to 128"
-git push origin main
-
-# Watch ArgoCD deploy
+# Watch production sync status
 argocd app get nebulift-production --watch
-```
 
-### Scale Training Pods
-
-```bash
-# Edit kustomization
-vim k8s/overlays/production/kustomization.yaml
-# Change: count: 12
-
-# Commit and push
-git commit -am "Scale to 12 pods"
-git push origin main
-```
-
-### Update Container Image
-
-```bash
-# Edit kustomization
-vim k8s/overlays/production/kustomization.yaml
-# Change: newTag: v1.2.3
-
-# Commit and push  
-git commit -am "Deploy version 1.2.3"
-git push origin main
-```
-
-## Common Commands
-
-```bash
-# View status
-argocd app list
-argocd app get nebulift-production
-
-# Force immediate sync (don't wait for auto-sync)
+# Force an immediate sync
 argocd app sync nebulift-production
 
 # Refresh from Git
@@ -119,54 +69,32 @@ argocd app get nebulift-production --refresh
 # View logs
 argocd app logs nebulift-production
 
-# Rollback
+# View deployment history
 argocd app history nebulift-production
+
+# Roll back using Argo CD history
 argocd app rollback nebulift-production
 ```
 
-## Troubleshooting
+## Temporarily Disable Auto-Sync
 
-### Sync is stuck or failed
-```bash
-argocd app get nebulift-production
-argocd app sync nebulift-production --force --prune
-```
-
-### Want to disable auto-sync temporarily
 ```bash
 argocd app set nebulift-production --sync-policy none
-# Make changes, test manually
 argocd app sync nebulift-production
-# Re-enable
 argocd app set nebulift-production --sync-policy automated
 ```
 
-### Check what ArgoCD will deploy
+Prefer changing Git and letting Argo CD reconcile normally. Use manual sync operations only for controlled maintenance or troubleshooting.
+
+## Check Pending Changes
+
 ```bash
 argocd app diff nebulift-production
 ```
 
-## Key Points
-
-🎯 **GitOps = No manual kubectl**
-- Commit to Git → ArgoCD deploys
-- Your cluster state always matches Git
-
-🔄 **Auto-sync enabled**
-- Changes deploy within ~3 minutes
-- Or instantly with Git webhooks
-
-🌲 **Branch = Environment**
-- `develop` → development env
-- `main` → production env
-
-📊 **Observability**
-- ArgoCD UI shows deployment status
-- Complete audit trail in Git history
-
 ## Next Steps
 
-- Read full docs: [argocd/README.md](./README.md)
-- Configure webhooks for instant sync
-- Set up notifications for deployment events
-- Integrate with CI/CD pipeline
+- Read the full guide: [argocd/README.md](./README.md)
+- Configure webhooks if faster reconciliation is required
+- Configure notifications for failed syncs or degraded health
+- Add render and policy checks to CI before enabling production automation
