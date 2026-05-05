@@ -1,0 +1,128 @@
+version: 2.1
+
+parameters:
+  run-training-pipeline:
+    type: boolean
+    default: false
+  python-version:
+    type: string
+    default: "3.12"
+
+executors:
+  python:
+    docker:
+      - image: cimg/python:<< pipeline.parameters.python-version >>
+    environment:
+      UV_CACHE_DIR: /tmp/.uv-cache
+
+commands:
+  install_uv:
+    description: Install uv package manager
+    steps:
+      - run:
+          name: Install uv
+          command: python -m pip install --upgrade pip uv
+
+  restore_uv_cache:
+    description: Restore uv dependency cache
+    steps:
+      - restore_cache:
+          keys:
+            - uv-v1-{{ arch }}-{{ checksum "uv.lock" }}
+            - uv-v1-{{ arch }}-
+
+  save_uv_cache:
+    description: Save uv dependency cache
+    steps:
+      - run:
+          name: Prune uv cache
+          command: uv cache prune --ci
+      - save_cache:
+          key: uv-v1-{{ arch }}-{{ checksum "uv.lock" }}
+          paths:
+            - /tmp/.uv-cache
+
+  install_project:
+    description: Install Nebulift with development dependencies
+    steps:
+      - install_uv
+      - restore_uv_cache
+      - run:
+          name: Install dependencies
+          command: uv sync --all-extras --dev
+
+jobs:
+  lint_and_typecheck:
+    executor: python
+    steps:
+      - checkout
+      - install_project
+      - run:
+          name: Check formatting
+          command: uv run black --check --diff .
+      - run:
+          name: Lint Python code
+          command: uv run flake8 nebulift/ tests/
+      - run:
+          name: Type check package
+          command: uv run mypy nebulift/ --ignore-missing-imports
+      - save_uv_cache
+
+  test_suite:
+    executor: python
+    steps:
+      - checkout
+      - install_project
+      - run:
+          name: Run pytest suite
+          command: |
+            mkdir -p test-results/pytest
+            uv run pytest tests/ -v --cov=nebulift --cov-report=xml --cov-report=term-missing --junitxml=test-results/pytest/results.xml
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: coverage.xml
+      - save_uv_cache
+
+  training_readiness:
+    executor: python
+    steps:
+      - checkout
+      - install_project
+      - run:
+          name: Validate model persistence
+          command: uv run python test_model_persistence.py
+      - run:
+          name: Validate training CLI surface
+          command: |
+            uv run nebulift --help
+            uv run python -m nebulift.cli train-from-fits --help
+      - save_uv_cache
+
+  full_training_pipeline:
+    executor: python
+    resource_class: large
+    steps:
+      - checkout
+      - install_project
+      - run:
+          name: Run FITS training pipeline smoke test
+          command: uv run python test_training_pipeline.py
+          no_output_timeout: 20m
+      - save_uv_cache
+
+workflows:
+  ci:
+    jobs:
+      - lint_and_typecheck
+      - test_suite:
+          requires:
+            - lint_and_typecheck
+      - training_readiness:
+          requires:
+            - lint_and_typecheck
+
+  training_pipeline:
+    when: << pipeline.parameters.run-training-pipeline >>
+    jobs:
+      - full_training_pipeline
