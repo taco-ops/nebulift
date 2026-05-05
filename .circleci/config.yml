@@ -96,6 +96,7 @@ jobs:
           name: Validate local workflow CLI surface
           command: |
             uv run nebulift --help
+            uv run python -m nebulift --help
             uv run python -m nebulift.cli analyze --help
             uv run python -m nebulift.cli batch --help
             uv run python -m nebulift.cli review --help
@@ -111,6 +112,21 @@ jobs:
       - run:
           name: Run local workflow tests
           command: uv run pytest tests/test_cli.py -v
+      - save_uv_cache
+
+  package_build:
+    executor: python
+    steps:
+      - checkout
+      - install_project
+      - run:
+          name: Build package distributions
+          command: uv build
+      - run:
+          name: Validate package metadata
+          command: uv run python -m twine check dist/*
+      - store_artifacts:
+          path: dist
       - save_uv_cache
 
   full_training_pipeline:
@@ -133,6 +149,9 @@ workflows:
           requires:
             - lint_and_typecheck
       - local_workflow_readiness:
+          requires:
+            - lint_and_typecheck
+      - package_build:
           requires:
             - lint_and_typecheck
 
