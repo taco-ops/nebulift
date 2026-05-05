@@ -84,7 +84,7 @@ jobs:
           path: coverage.xml
       - save_uv_cache
 
-  training_readiness:
+  local_workflow_readiness:
     executor: python
     steps:
       - checkout
@@ -93,10 +93,24 @@ jobs:
           name: Validate model persistence
           command: uv run python test_model_persistence.py
       - run:
-          name: Validate training CLI surface
+          name: Validate local workflow CLI surface
           command: |
             uv run nebulift --help
+            uv run python -m nebulift.cli analyze --help
+            uv run python -m nebulift.cli batch --help
+            uv run python -m nebulift.cli review --help
+            uv run python -m nebulift.cli evaluate-manifest --help
+            uv run python -m nebulift.cli calibrate-thresholds --help
+            uv run python -m nebulift.cli export-curated --help
+            uv run python -m nebulift.cli train --help
             uv run python -m nebulift.cli train-from-fits --help
+            uv run python -m nebulift.cli train-from-manifest --help
+            uv run python -m nebulift.cli register-model --help
+            uv run python -m nebulift.cli promote-model --help
+            uv run python -m nebulift.cli list-models --help
+      - run:
+          name: Run local workflow tests
+          command: uv run pytest tests/test_cli.py -v
       - save_uv_cache
 
   full_training_pipeline:
@@ -118,7 +132,7 @@ workflows:
       - test_suite:
           requires:
             - lint_and_typecheck
-      - training_readiness:
+      - local_workflow_readiness:
           requires:
             - lint_and_typecheck
 
