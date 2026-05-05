@@ -4,6 +4,7 @@ Test suite for ML Model
 Tests the ResNet18-based quality classifier and related components.
 """
 
+import json
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -21,7 +22,9 @@ from nebulift.ml_model import (
     QualityPredictor,
     create_data_transforms,
     create_dataset_from_cv_labels,
+    create_dataset_from_manifest,
     generate_training_labels_from_cv,
+    load_labeled_records_from_manifest,
     optimize_model_for_inference,
 )
 
@@ -375,6 +378,87 @@ class TestUtilityFunctions:
         assert [path.name for path in review_files] == ["review.fits"]
         assert (tmp_path / "dataset" / "train_manifest.csv").exists()
         assert (tmp_path / "dataset" / "val_manifest.csv").exists()
+
+    def test_load_labeled_records_from_manifest_prefers_corrected_labels(
+        self,
+        tmp_path,
+    ):
+        """Test reviewed manifest loading uses corrected labels when present."""
+        clean_file = tmp_path / "clean.fits"
+        review_file = tmp_path / "review.fits"
+        clean_file.write_text("placeholder")
+        review_file.write_text("placeholder")
+        manifest_path = tmp_path / "batch_manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "source_path": str(clean_file),
+                            "decision_label": "review",
+                            "corrected_label": "clean",
+                            "quality_score": 0.5,
+                            "reviewed": True,
+                        },
+                        {
+                            "source_path": str(review_file),
+                            "decision_label": "review",
+                            "corrected_label": None,
+                            "quality_score": 0.4,
+                            "reviewed": False,
+                        },
+                    ],
+                },
+            ),
+        )
+
+        records = load_labeled_records_from_manifest(manifest_path)
+        reviewed_records = load_labeled_records_from_manifest(
+            manifest_path,
+            reviewed_only=True,
+        )
+
+        assert [record["label"] for record in records] == [LABEL_CLEAN, LABEL_REVIEW]
+        assert [record["label"] for record in reviewed_records] == [LABEL_CLEAN]
+
+    def test_create_dataset_from_manifest_writes_json_manifests(self, tmp_path):
+        """Test manifest dataset creation writes train and validation JSON files."""
+        files = []
+        labels = ["clean", "contaminated", "review", "clean"]
+        for index, label in enumerate(labels):
+            path = tmp_path / f"{label}_{index}.fits"
+            path.write_text("placeholder")
+            files.append(path)
+
+        manifest_path = tmp_path / "batch_manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "source_path": str(path),
+                            "decision_label": label,
+                            "corrected_label": None,
+                            "quality_score": 0.8,
+                            "reviewed": False,
+                        }
+                        for path, label in zip(files, labels)
+                    ],
+                },
+            ),
+        )
+
+        train_dataset, val_dataset, records = create_dataset_from_manifest(
+            manifest_path,
+            output_dir=tmp_path / "dataset",
+            train_split=0.75,
+        )
+
+        assert len(train_dataset) == 3
+        assert len(val_dataset) == 1
+        assert len(records) == 4
+        assert (tmp_path / "dataset" / "train_manifest.json").exists()
+        assert (tmp_path / "dataset" / "val_manifest.json").exists()
 
     def test_create_data_transforms_train(self):
         """Test creation of training transforms."""

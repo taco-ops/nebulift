@@ -444,35 +444,14 @@ syncWindows:
 
 ## Integration with CI/CD
 
-### GitHub Actions Integration
+CircleCI is the primary CI system for Nebulift. Keep Argo CD deployment changes Git-driven: CI should validate manifests and tests before changes merge, while Argo CD reconciles the cluster from the merged Git state.
 
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy to ArgoCD
-on:
-  push:
-    branches: [main, develop]
+Recommended CI checks before relying on automated sync:
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Update image tag
-        run: |
-          # Update kustomization with new image tag
-          cd k8s/overlays/production
-          kustomize edit set image ghcr.io/taco-ops/nebulift:${{ github.sha }}
-          
-      - name: Commit changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add k8s/overlays/production/kustomization.yaml
-          git commit -m "Update image tag to ${{ github.sha }}"
-          git push
-```
+- Python lint, type checks, and tests
+- `kubectl kustomize k8s/overlays/development`
+- `kubectl kustomize k8s/overlays/production`
+- Container build checks if deployment images are being updated
 
 ## Support and Contributing
 

@@ -1,6 +1,5 @@
 # Nebulift: Astrophotography Quality Control
 
-[![CI/CD Pipeline](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml/badge.svg)](https://github.com/taco-ops/nebulift/actions/workflows/ci.yml)
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/taco-ops/nebulift/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/taco-ops/nebulift/tree/main)
 [![codecov](https://codecov.io/gh/taco-ops/nebulift/branch/main/graph/badge.svg)](https://codecov.io/gh/taco-ops/nebulift)
 [![Latest Release](https://img.shields.io/github/v/release/taco-ops/nebulift?color=orange&include_prereleases)](https://github.com/taco-ops/nebulift/releases)
@@ -35,13 +34,18 @@ Implemented:
 - Optional ML-assisted classification for `analyze` and `batch` when a model checkpoint is provided
 - Optional batch moving into class buckets with `--action move`
 - Interactive terminal review of batch manifests
+- Reviewed manifest evaluation with accuracy, confusion matrix, and per-class metrics
+- CV threshold calibration across reviewed manifests
+- Curated dataset export from reviewed manifests
+- Local model registry and promoted default model workflow
 - Local FITS-to-model training pipeline through `nebulift train-from-fits`
+- Local manifest-to-model training pipeline through `nebulift train-from-manifest`
 - Model checkpointing, metadata, and versioning utilities
-- Docker, Kubernetes, Kustomize, Argo CD, GitHub Actions, and CircleCI configuration
+- Docker, Kubernetes, Kustomize, Argo CD, and CircleCI configuration
 
 Not yet complete:
 
-- Batch review currently updates JSON manifests only; it does not display images or write curated datasets
+- Batch review currently updates JSON manifests only; it does not display image previews
 - Regular image analysis is supported by lower-level CV utilities, but the primary CLI workflow is FITS-oriented
 - No pretrained Nebulift model is currently shipped with the repository
 - Distributed Kubernetes training still needs real dataset mounting, model persistence, and end-to-end validation
@@ -122,6 +126,43 @@ uv run nebulift review /path/to/sorted/output/batch_manifest.json
 
 The review command prompts for corrected labels in the terminal and updates the manifest in place. It currently supports label correction only; it does not display image previews.
 
+Use `--open` to launch each file with the system viewer during review:
+
+```bash
+uv run nebulift review /path/to/sorted/output/batch_manifest.json --open
+```
+
+### Evaluate a Reviewed Manifest
+
+```bash
+uv run nebulift evaluate-manifest /path/to/sorted/output/batch_manifest.json \
+    --prediction decision \
+    --output /path/to/sorted/output/evaluation.json
+```
+
+This compares reviewed `corrected_label` values against the selected prediction field and reports accuracy, a confusion matrix, and per-class precision, recall, and F1. Use `--prediction cv` to evaluate the raw CV label instead of the final decision label.
+
+### Calibrate CV Thresholds
+
+```bash
+uv run nebulift calibrate-thresholds \
+    /path/to/session-a/batch_manifest.json \
+    /path/to/session-b/batch_manifest.json \
+    --step 0.05 \
+    --output calibration.json
+```
+
+This searches clean and contaminated CV score thresholds against reviewed labels across one or more manifests. The recommendation is selected by macro F1 first, then accuracy. Use the resulting thresholds with `batch --clean_threshold` and `--contaminated_threshold`.
+
+### Export a Curated Dataset
+
+```bash
+uv run nebulift export-curated /path/to/sorted/output/batch_manifest.json \
+    /path/to/curated/dataset
+```
+
+By default, this copies reviewed files into `clean/`, `contaminated/`, and `review/` folders and writes `curated_manifest.json`. Use `--include-unreviewed` to include unreviewed files with their original decision labels. Use `--action symlink` or `--action move` when copying is not desired.
+
 ### Train From FITS Files
 
 ```bash
@@ -149,6 +190,50 @@ Threshold behavior:
 - `score >= clean_threshold`: `clean`
 - `score <= contaminated_threshold`: `contaminated`
 - scores between thresholds: `review`
+
+### Train From a Reviewed Manifest
+
+```bash
+uv run nebulift train-from-manifest /path/to/sorted/output/batch_manifest.json \
+    --model_output models/reviewed_classifier.pth \
+    --dataset_dir datasets/reviewed_training \
+    --epochs 50 \
+    --batch_size 32
+```
+
+This workflow trains from labels stored in a JSON batch manifest. If `corrected_label` is present, it is used; otherwise the original `decision_label` is used. Add `--reviewed_only` to train only from files that were explicitly reviewed with `nebulift review`.
+
+### Train From a Curated Dataset
+
+```bash
+uv run nebulift train /path/to/curated/dataset \
+    --model_output models/curated_classifier.pth \
+    --epochs 50 \
+    --batch_size 32
+```
+
+The curated dataset directory should contain one or more class folders named `clean`, `contaminated`, and `review` with FITS files inside.
+
+### Register and Promote a Model
+
+```bash
+uv run nebulift register-model models/reviewed_classifier.pth \
+    --name "Reviewed classifier" \
+    --model-id reviewed-v1 \
+    --evaluation evaluation.json \
+    --calibration calibration.json \
+    --promote
+
+uv run nebulift list-models
+```
+
+Promoted models are stored in `models/model_registry.json`. After promotion, `analyze` and `batch` use the default model automatically unless `--model` is provided or `--no-default-model` is set.
+
+```bash
+uv run nebulift analyze /path/to/image.fits
+uv run nebulift batch /path/to/raw/fits /path/to/output
+uv run nebulift batch /path/to/raw/fits /path/to/output --no-default-model
+```
 
 ## Python API Example
 
@@ -182,9 +267,9 @@ uv run flake8 nebulift/ tests/
 uv run mypy nebulift/ --ignore-missing-imports
 ```
 
-## CircleCI
+## Continuous Integration
 
-Nebulift keeps source code in GitHub and can run validation from CircleCI using `.circleci/config.yml`.
+Nebulift keeps source code in GitHub and uses CircleCI as the primary CI system through `.circleci/config.yml`.
 
 Regular CircleCI pipelines run formatting, linting, type checks, unit tests, model persistence checks, and CLI training command checks.
 
@@ -212,7 +297,7 @@ These resources are useful for infrastructure iteration, but the local training 
 Useful areas for contribution:
 
 - Real FITS dataset validation
-- Curated-label import from reviewed JSON manifests
+- Image preview support during interactive manifest review
 - Pretrained model packaging or download workflow
 - Distributed training integration with real storage
 - CLI integration tests
