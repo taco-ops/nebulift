@@ -6,6 +6,6 @@ astronomical images captured with telescopes. Identifies artifacts like satellit
 streaks, airplane trails, and cloud contamination to improve image stacking quality.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 __author__ = "David Perez"
 __description__ = "Automated Quality Assessment for Astrophotography Images"

@@ -7,6 +7,7 @@ Optimized for CPU-only inference on resource-constrained devices like Raspberry 
 """
 
 import csv
+import json
 import logging
 import random
 from pathlib import Path
@@ -33,6 +34,7 @@ LABEL_NAMES = {
     LABEL_CLEAN: "clean",
     LABEL_REVIEW: "review",
 }
+LABEL_IDS = {label_name: label_id for label_id, label_name in LABEL_NAMES.items()}
 
 
 class AstroImageDataset(Dataset):
@@ -604,6 +606,13 @@ def _label_from_quality_score(
     return LABEL_REVIEW
 
 
+def _label_id_from_name(label_name: str) -> int:
+    try:
+        return LABEL_IDS[label_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown label: {label_name}") from exc
+
+
 def _generate_cv_label_records(
     fits_files: Sequence[Union[str, Path]],
     artifact_detector: Optional[Any] = None,
@@ -711,6 +720,27 @@ def _write_manifest(
             )
 
 
+def _write_json_manifest(
+    manifest_path: Path,
+    records: list[dict[str, Any]],
+    split: str,
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    serializable_records = []
+    for record in records:
+        serializable_records.append(
+            {
+                "split": split,
+                "path": str(record["path"]),
+                "label": record["label"],
+                "label_name": record["label_name"],
+                "quality_score": record.get("quality_score"),
+                "reviewed": record.get("reviewed", False),
+            },
+        )
+    manifest_path.write_text(json.dumps({"files": serializable_records}, indent=2))
+
+
 def create_dataset_from_cv_labels(
     fits_files: Sequence[Union[str, Path]],
     artifact_detector: Optional[Any] = None,
@@ -765,6 +795,95 @@ def create_dataset_from_cv_labels(
     )
 
     return train_dataset, val_dataset, review_files
+
+
+def load_labeled_records_from_manifest(
+    manifest_path: Union[str, Path],
+    reviewed_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Load labeled FITS records from a JSON batch manifest."""
+    manifest_path = Path(manifest_path)
+    manifest = json.loads(manifest_path.read_text())
+    records = []
+
+    for entry in manifest.get("files", []):
+        if entry.get("error"):
+            continue
+        if reviewed_only and not entry.get("reviewed"):
+            continue
+
+        label_name = entry.get("corrected_label") or entry.get("decision_label")
+        if label_name not in LABEL_IDS:
+            logger.warning(f"Skipping manifest entry with unknown label: {label_name}")
+            continue
+
+        path_value = entry.get("destination_path") or entry.get("source_path")
+        if not path_value:
+            logger.warning("Skipping manifest entry without a source path")
+            continue
+
+        path = Path(path_value)
+        if not path.exists():
+            logger.warning(f"Skipping missing manifest file: {path}")
+            continue
+
+        records.append(
+            {
+                "path": path,
+                "label": _label_id_from_name(str(label_name)),
+                "label_name": str(label_name),
+                "quality_score": entry.get("quality_score"),
+                "reviewed": bool(entry.get("reviewed")),
+            },
+        )
+
+    return records
+
+
+def create_dataset_from_manifest(
+    manifest_path: Union[str, Path],
+    output_dir: Union[str, Path] = "dataset",
+    train_split: float = 0.8,
+    reviewed_only: bool = False,
+    random_seed: int = 42,
+) -> tuple[AstroImageDataset, AstroImageDataset, list[dict[str, Any]]]:
+    """Create train/validation datasets from a reviewed JSON batch manifest."""
+    if not 0.0 < train_split < 1.0:
+        raise ValueError("train_split must be between 0.0 and 1.0")
+
+    from .fits_processor import FITSProcessor
+
+    records = load_labeled_records_from_manifest(manifest_path, reviewed_only)
+    if len(records) < 2:
+        raise ValueError(
+            "At least two labeled manifest files are required for training"
+        )
+
+    random.Random(random_seed).shuffle(records)  # nosec B311 - deterministic split only
+    split_index = int(len(records) * train_split)
+    split_index = min(max(split_index, 1), len(records) - 1)
+
+    train_records = records[:split_index]
+    val_records = records[split_index:]
+    output_path = Path(output_dir)
+    _write_json_manifest(output_path / "train_manifest.json", train_records, "train")
+    _write_json_manifest(output_path / "val_manifest.json", val_records, "val")
+
+    fits_processor = FITSProcessor()
+    train_dataset = AstroImageDataset(
+        [record["path"] for record in train_records],
+        [record["label"] for record in train_records],
+        transform=create_data_transforms(train=True),
+        fits_processor=fits_processor,
+    )
+    val_dataset = AstroImageDataset(
+        [record["path"] for record in val_records],
+        [record["label"] for record in val_records],
+        transform=create_data_transforms(train=False),
+        fits_processor=fits_processor,
+    )
+
+    return train_dataset, val_dataset, records
 
 
 def _find_fits_files(fits_directory: Union[str, Path]) -> list[Path]:
@@ -851,6 +970,79 @@ def complete_training_pipeline(
             "training_samples": len(train_dataset),
             "validation_samples": len(val_dataset),
             "review_samples": len(review_files),
+            "label_counts": label_counts,
+        },
+    }
+
+
+def complete_training_pipeline_from_manifest(
+    manifest_path: Union[str, Path],
+    model_output_path: Union[str, Path],
+    dataset_output_dir: Union[str, Path],
+    epochs: int = 20,
+    batch_size: int = 32,
+    train_split: float = 0.8,
+    reviewed_only: bool = False,
+    device: Optional[str] = None,
+    pretrained: bool = False,
+) -> dict[str, Any]:
+    """Train a three-class model from labels in a JSON batch manifest."""
+    if epochs < 1:
+        raise ValueError("epochs must be at least 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
+    train_dataset, val_dataset, records = create_dataset_from_manifest(
+        manifest_path=manifest_path,
+        output_dir=dataset_output_dir,
+        train_split=train_split,
+        reviewed_only=reviewed_only,
+    )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = AstroQualityClassifier(num_classes=3, pretrained=pretrained)
+    trainer = ModelTrainer(model, device=device)
+    history = trainer.train(train_loader, val_loader, epochs=epochs)
+    trainer.save_model(model_output_path)
+
+    all_labels = train_dataset.labels + val_dataset.labels
+    label_counts = {
+        LABEL_NAMES[label]: all_labels.count(label) for label in LABEL_NAMES
+    }
+
+    return {
+        "model_path": str(model_output_path),
+        "dataset_dir": str(dataset_output_dir),
+        "manifest_path": str(manifest_path),
+        "history": history,
+        "final_metrics": {
+            "best_val_accuracy": (
+                max(trainer.val_accuracies) if trainer.val_accuracies else 0.0
+            ),
+            "final_val_accuracy": (
+                trainer.val_accuracies[-1] if trainer.val_accuracies else 0.0
+            ),
+            "final_val_loss": trainer.val_losses[-1] if trainer.val_losses else 0.0,
+        },
+        "dataset_stats": {
+            "total_manifest_records": len(records),
+            "training_samples": len(train_dataset),
+            "validation_samples": len(val_dataset),
+            "reviewed_samples": sum(1 for record in records if record.get("reviewed")),
             "label_counts": label_counts,
         },
     }
