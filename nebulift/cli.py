@@ -12,18 +12,24 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from nebulift.cv_prefilter import ArtifactDetector
 from nebulift.fits_processor import FITSProcessor
 
 from .cv_prefilter import batch_analyze_images
-from .ml_model import AstroQualityClassifier
+from .ml_model import (
+    AstroQualityClassifier,
+    QualityPredictor,
+    complete_training_pipeline,
+)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -35,7 +41,27 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
-def analyze_single_file(fits_path: Path) -> dict:
+def classify_cv_score(
+    quality_score: float,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+) -> str:
+    """Classify a CV quality score into a sorting bucket."""
+    if contaminated_threshold >= clean_threshold:
+        raise ValueError("contaminated_threshold must be lower than clean_threshold")
+    if quality_score >= clean_threshold:
+        return "clean"
+    if quality_score <= contaminated_threshold:
+        return "contaminated"
+    return "review"
+
+
+def analyze_single_file(
+    fits_path: Path,
+    model_path: Optional[Path] = None,
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+) -> dict[str, Any]:
     """Analyze a single FITS file for quality."""
     processor = FITSProcessor()
     detector = ArtifactDetector()
@@ -47,66 +73,260 @@ def analyze_single_file(fits_path: Path) -> dict:
 
     normalized = processor.normalize_image(fits_data["image_data"])
     analysis = detector.comprehensive_analysis(normalized)
+    quality_score = float(analysis["overall_quality_score"])
+    cv_label = classify_cv_score(
+        quality_score,
+        clean_threshold=clean_threshold,
+        contaminated_threshold=contaminated_threshold,
+    )
+
+    ml_prediction = None
+    decision_label = cv_label
+    decision_source = "cv"
+    if model_path is not None:
+        predictor = QualityPredictor(str(model_path))
+        ml_prediction = predictor.predict_single(str(fits_path), processor)
+        if "error" not in ml_prediction:
+            decision_label = str(ml_prediction["predicted_label"])
+            decision_source = "ml"
 
     return {
         "file": str(fits_path),
-        "quality_score": analysis["overall_quality_score"],
+        "quality_score": quality_score,
         "has_streaks": analysis["streaks"]["has_streaks"],
         "has_clouds": analysis["clouds"]["has_clouds"],
         "has_saturation": analysis["saturation"]["has_saturation"],
         "needs_review": analysis["needs_manual_review"],
-        "recommendation": (
-            "keep" if analysis["overall_quality_score"] > 0.5 else "discard"
-        ),
+        "cv_label": cv_label,
+        "decision_label": decision_label,
+        "decision_source": decision_source,
+        "ml_prediction": ml_prediction,
     }
 
 
-def batch_process(input_dir: Path, output_dir: Path) -> None:
-    """Batch process FITS files in a directory."""
+def _manifest_summary(entries: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"clean": 0, "contaminated": 0, "review": 0, "errors": 0}
+    for entry in entries:
+        if entry.get("error"):
+            summary["errors"] += 1
+        else:
+            label = str(entry["decision_label"])
+            summary[label] = summary.get(label, 0) + 1
+    return summary
+
+
+def _build_manifest_entry(
+    fits_path: Path,
+    analysis: dict[str, Any],
+    cv_label: str,
+    decision_label: str,
+    decision_source: str,
+    action: str,
+    destination_path: Optional[Path],
+    ml_prediction: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    quality_score = float(analysis["overall_quality_score"])
+    return {
+        "source_path": str(fits_path),
+        "file_name": fits_path.name,
+        "quality_score": quality_score,
+        "cv_label": cv_label,
+        "decision_label": decision_label,
+        "decision_source": decision_source,
+        "action": action,
+        "destination_path": str(destination_path) if destination_path else None,
+        "needs_review": bool(analysis["needs_manual_review"]),
+        "artifacts": {
+            "has_streaks": bool(analysis["streaks"]["has_streaks"]),
+            "has_clouds": bool(analysis["clouds"]["has_clouds"]),
+            "has_saturation": bool(analysis["saturation"]["has_saturation"]),
+            "has_hot_pixels": bool(analysis["hot_pixels"]["has_hot_pixels"]),
+        },
+        "ml_prediction": ml_prediction,
+        "reviewed": False,
+        "corrected_label": None,
+    }
+
+
+def batch_process(
+    input_dir: Path,
+    output_dir: Path,
+    action: str = "report",
+    model_path: Optional[Path] = None,
+    manifest_name: str = "batch_manifest.json",
+    clean_threshold: float = 0.7,
+    contaminated_threshold: float = 0.3,
+) -> Path:
+    """Batch process FITS files and write a JSON manifest."""
+    if action not in {"report", "move"}:
+        raise ValueError("action must be 'report' or 'move'")
+
     detector = ArtifactDetector()
-
-    # Create output directories
-    clean_dir = output_dir / "clean"
-    contaminated_dir = output_dir / "contaminated"
-    review_dir = output_dir / "review"
-
-    for dir_path in [clean_dir, contaminated_dir, review_dir]:
-        dir_path.mkdir(parents=True, exist_ok=True)
+    processor = FITSProcessor()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Find all FITS files
-    fits_files = list(input_dir.glob("*.fits")) + list(input_dir.glob("*.fit"))
+    fits_files = sorted(
+        list(input_dir.glob("*.fits"))
+        + list(input_dir.glob("*.fit"))
+        + list(input_dir.glob("*.fts")),
+    )
 
     if not fits_files:
         print(f"No FITS files found in {input_dir}")
-        return
+        manifest_path = output_dir / manifest_name
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "input_dir": str(input_dir),
+                    "output_dir": str(output_dir),
+                    "action": action,
+                    "model_path": str(model_path) if model_path else None,
+                    "summary": {
+                        "clean": 0,
+                        "contaminated": 0,
+                        "review": 0,
+                        "errors": 0,
+                    },
+                    "files": [],
+                },
+                indent=2,
+            ),
+        )
+        return manifest_path
 
     print(f"Processing {len(fits_files)} FITS files...")
 
     # Batch analyze
-    results = batch_analyze_images([str(f) for f in fits_files], detector)
+    results = batch_analyze_images([str(f) for f in fits_files], detector, processor)
+    predictor = QualityPredictor(str(model_path)) if model_path else None
+    entries = []
 
-    # Sort files by quality
-    for fits_path_str, analysis in results.items():
-        fits_path = Path(fits_path_str)
-        score = analysis["overall_quality_score"]
+    for fits_path in fits_files:
+        analysis = results.get(str(fits_path))
+        if analysis is None:
+            entries.append(
+                {
+                    "source_path": str(fits_path),
+                    "file_name": fits_path.name,
+                    "error": "analysis_failed",
+                    "action": action,
+                    "destination_path": None,
+                    "reviewed": False,
+                    "corrected_label": None,
+                },
+            )
+            continue
 
-        if score > 0.7:
-            # High quality - copy to clean directory
-            clean_dir = output_dir / "clean"
-            clean_dir.mkdir(exist_ok=True)
-            shutil.copy2(fits_path, clean_dir / fits_path.name)
-        elif score < 0.3:
-            # Low quality - copy to contaminated directory
-            contaminated_dir = output_dir / "contaminated"
-            contaminated_dir.mkdir(exist_ok=True)
-            shutil.copy2(fits_path, contaminated_dir / fits_path.name)
-        else:
-            # Uncertain - copy to review directory
-            review_dir = output_dir / "review"
-            review_dir.mkdir(exist_ok=True)
-            shutil.copy2(fits_path, review_dir / fits_path.name)
+        quality_score = float(analysis["overall_quality_score"])
+        decision_label = classify_cv_score(
+            quality_score,
+            clean_threshold=clean_threshold,
+            contaminated_threshold=contaminated_threshold,
+        )
+        decision_source = "cv"
+        ml_prediction = None
 
-    print(f"\nProcessing complete! Results saved to {output_dir}")
+        if predictor is not None:
+            ml_prediction = predictor.predict_single(str(fits_path), processor)
+            if "error" not in ml_prediction:
+                decision_label = str(ml_prediction["predicted_label"])
+                decision_source = "ml"
+
+        destination_path = None
+        if action == "move":
+            destination_dir = output_dir / decision_label
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            destination_path = destination_dir / fits_path.name
+            shutil.move(str(fits_path), str(destination_path))
+
+        entries.append(
+            _build_manifest_entry(
+                fits_path=fits_path,
+                analysis=analysis,
+                cv_label=classify_cv_score(
+                    quality_score,
+                    clean_threshold=clean_threshold,
+                    contaminated_threshold=contaminated_threshold,
+                ),
+                decision_label=decision_label,
+                decision_source=decision_source,
+                action=action,
+                destination_path=destination_path,
+                ml_prediction=ml_prediction,
+            ),
+        )
+
+    manifest = {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "action": action,
+        "model_path": str(model_path) if model_path else None,
+        "thresholds": {
+            "clean": clean_threshold,
+            "contaminated": contaminated_threshold,
+        },
+        "summary": _manifest_summary(entries),
+        "files": entries,
+    }
+    manifest_path = output_dir / manifest_name
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+    print(f"\nProcessing complete. Manifest saved to {manifest_path}")
+    if action == "move":
+        print(f"Files moved into buckets under {output_dir}")
+    return manifest_path
+
+
+def review_manifest(manifest_path: Path) -> None:
+    """Interactively review and correct labels in a batch manifest."""
+    manifest = json.loads(manifest_path.read_text())
+    files = manifest.get("files", [])
+    label_choices = {
+        "c": "clean",
+        "clean": "clean",
+        "x": "contaminated",
+        "contaminated": "contaminated",
+        "r": "review",
+        "review": "review",
+    }
+
+    for index, entry in enumerate(files, start=1):
+        if entry.get("error"):
+            continue
+
+        current_label = entry.get("corrected_label") or entry.get("decision_label")
+        print()
+        print(f"[{index}/{len(files)}] {entry['source_path']}")
+        print(f"Quality score: {entry.get('quality_score')}")
+        print(
+            f"Decision: {entry.get('decision_label')} ({entry.get('decision_source')})"
+        )
+        print(f"Current label: {current_label}")
+        print(f"Artifacts: {entry.get('artifacts')}")
+        response = input(
+            "Set label [c=clean, x=contaminated, r=review, s=skip, q=quit]: "
+        )
+        response = response.strip().lower()
+
+        if response == "q":
+            break
+        if response in {"", "s", "skip"}:
+            continue
+        if response not in label_choices:
+            print(f"Unknown label choice: {response}")
+            continue
+
+        entry["corrected_label"] = label_choices[response]
+        entry["reviewed"] = True
+
+    manifest["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    print(f"Updated manifest: {manifest_path}")
 
 
 def train_model(data_dir: Path, model_output: Path, epochs: int = 50) -> None:
@@ -136,9 +356,25 @@ def train_from_fits(
     print(
         f"Clean threshold: {clean_threshold}, Contaminated threshold: {contaminated_threshold}",
     )
+    results = complete_training_pipeline(
+        fits_directory=fits_dir,
+        model_output_path=model_output,
+        dataset_output_dir=dataset_dir,
+        epochs=epochs,
+        batch_size=batch_size,
+        clean_threshold=clean_threshold,
+        contaminated_threshold=contaminated_threshold,
+    )
 
-    print("Note: This CLI function needs proper pipeline implementation")
-    print("Use the Jupyter notebooks for complete training workflow")
+    stats = results["dataset_stats"]
+    metrics = results["final_metrics"]
+    print("\nTraining complete!")
+    print(f"Model saved to: {results['model_path']}")
+    print(f"Dataset manifests saved to: {results['dataset_dir']}")
+    print(f"Training samples: {stats['training_samples']}")
+    print(f"Validation samples: {stats['validation_samples']}")
+    print(f"Review samples: {stats['review_samples']}")
+    print(f"Best validation accuracy: {metrics['best_val_accuracy']:.2f}%")
 
 
 def launch_k8s_training(config_path: Optional[Path] = None) -> None:
@@ -209,6 +445,23 @@ def main() -> None:
     # Analyze command
     analyze_parser = subparsers.add_parser("analyze", help="Analyze single FITS file")
     analyze_parser.add_argument("fits_file", type=Path, help="Path to FITS file")
+    analyze_parser.add_argument(
+        "--model",
+        type=Path,
+        help="Optional trained model checkpoint for ML-assisted classification",
+    )
+    analyze_parser.add_argument(
+        "--clean_threshold",
+        type=float,
+        default=0.7,
+        help="CV quality threshold for clean label (default: 0.7)",
+    )
+    analyze_parser.add_argument(
+        "--contaminated_threshold",
+        type=float,
+        default=0.3,
+        help="CV quality threshold for contaminated label (default: 0.3)",
+    )
 
     # Batch command
     batch_parser = subparsers.add_parser("batch", help="Batch process directory")
@@ -220,7 +473,35 @@ def main() -> None:
     batch_parser.add_argument(
         "output_dir",
         type=Path,
-        help="Output directory for sorted files",
+        help="Output directory for JSON manifest and optional moved files",
+    )
+    batch_parser.add_argument(
+        "--action",
+        choices=["report", "move"],
+        default="report",
+        help="Batch action: write report only or move files into buckets (default: report)",
+    )
+    batch_parser.add_argument(
+        "--model",
+        type=Path,
+        help="Optional trained model checkpoint for ML-assisted classification",
+    )
+    batch_parser.add_argument(
+        "--manifest",
+        default="batch_manifest.json",
+        help="Manifest filename to write under output_dir",
+    )
+    batch_parser.add_argument(
+        "--clean_threshold",
+        type=float,
+        default=0.7,
+        help="CV quality threshold for clean label (default: 0.7)",
+    )
+    batch_parser.add_argument(
+        "--contaminated_threshold",
+        type=float,
+        default=0.3,
+        help="CV quality threshold for contaminated label (default: 0.3)",
     )
 
     # Train command
@@ -305,6 +586,17 @@ def main() -> None:
     # Validate command
     subparsers.add_parser("validate", help="Run system validation")
 
+    # Review command
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Interactively review and correct a JSON batch manifest",
+    )
+    review_parser.add_argument(
+        "manifest",
+        type=Path,
+        help="Path to a batch_manifest.json file",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -313,7 +605,12 @@ def main() -> None:
     # Execute command
     try:
         if args.command == "analyze":
-            result = analyze_single_file(args.fits_file)
+            result = analyze_single_file(
+                args.fits_file,
+                model_path=args.model,
+                clean_threshold=args.clean_threshold,
+                contaminated_threshold=args.contaminated_threshold,
+            )
             if "error" in result:
                 print(f"Error: {result['error']}")
                 sys.exit(1)
@@ -324,10 +621,20 @@ def main() -> None:
                 print(f"Has Clouds: {result['has_clouds']}")
                 print(f"Has Saturation: {result['has_saturation']}")
                 print(f"Needs Review: {result['needs_review']}")
-                print(f"Recommendation: {result['recommendation']}")
+                print(f"CV Label: {result['cv_label']}")
+                print(f"Decision Label: {result['decision_label']}")
+                print(f"Decision Source: {result['decision_source']}")
 
         elif args.command == "batch":
-            batch_process(args.input_dir, args.output_dir)
+            batch_process(
+                args.input_dir,
+                args.output_dir,
+                action=args.action,
+                model_path=args.model,
+                manifest_name=args.manifest,
+                clean_threshold=args.clean_threshold,
+                contaminated_threshold=args.contaminated_threshold,
+            )
 
         elif args.command == "train":
             train_model(args.data_dir, args.model_output, args.epochs)
@@ -348,6 +655,9 @@ def main() -> None:
 
         elif args.command == "validate":
             validate_system()
+
+        elif args.command == "review":
+            review_manifest(args.manifest)
 
         else:
             parser.print_help()

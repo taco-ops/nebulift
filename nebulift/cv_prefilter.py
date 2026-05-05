@@ -376,7 +376,7 @@ def batch_analyze_images(
         try:
             # Check if this is a FITS file
             path_obj = Path(image_path)
-            is_fits = path_obj.suffix.lower() in [".fits", ".fit"]
+            is_fits = path_obj.suffix.lower() in [".fits", ".fit", ".fts"]
 
             if is_fits:
                 # Use FITSProcessor for FITS files

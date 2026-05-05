@@ -8,7 +8,7 @@ This guide explains how to deploy Nebulift using ArgoCD for GitOps-based continu
 - **Git is the single source of truth** for infrastructure and application state
 - **ArgoCD continuously monitors** the Git repository for changes
 - **Changes are automatically deployed** when you push to Git
-- **No manual kubectl commands** needed for deployments
+- **Manual kubectl deployment commands are avoided** for managed resources
 - **Drift detection and self-healing** keeps cluster state synchronized with Git
 
 ### The GitOps Workflow
@@ -100,13 +100,13 @@ kubectl apply -f argocd/applications/nebulift-training.yaml
 
 ### Step 3: Let ArgoCD Handle Deployments
 
-**That's it!** ArgoCD will now:
+ArgoCD will now:
 - Monitor the Git repository for changes
 - Automatically sync when you push to `develop` or `main` branches
 - Deploy updates to the respective environments
 - Maintain desired state through continuous reconciliation
 
-**No manual deployments needed** - just commit and push your changes to Git!
+For managed resources, make deployment changes through Git and let ArgoCD reconcile the cluster state.
 
 ## Environment Configuration
 
