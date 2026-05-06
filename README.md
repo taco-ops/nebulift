@@ -13,6 +13,10 @@ Nebulift is a beta Python tool for quality assessment of astronomical FITS image
 
 The current focus is a reliable local CLI workflow for FITS files. Kubernetes, Argo CD, and distributed training resources are present for future deployment work, but they should be treated as scaffolding until validated with real datasets and cluster storage.
 
+## Workflow Overview
+
+![Nebulift local-first workflow](docs/assets/nebulift-workflow.svg)
+
 ## Use Case
 
 Astrophotography sessions often produce many FITS frames that need to be reviewed before stacking. Nebulift helps identify likely clean, contaminated, and borderline frames so users can reduce manual inspection time.
