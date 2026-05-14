@@ -1,0 +1,192 @@
+{
+  "id": "nebulift-future-track",
+  "title": "Nebulift Future Track",
+  "subtitle": "GitOps-driven cluster training flow from Git branches through Argo CD into Kubernetes jobs.",
+  "width": 1800,
+  "height": 1100,
+  "legend": [
+    {
+      "label": "Git source of truth",
+      "tone": "violet"
+    },
+    {
+      "label": "GitOps reconciliation",
+      "tone": "future"
+    },
+    {
+      "label": "Cluster training runtime",
+      "tone": "cyan"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "git",
+      "kind": "card",
+      "x": 92,
+      "y": 240,
+      "w": 360,
+      "h": 228,
+      "tone": "violet",
+      "icon": "github",
+      "eyebrow": "1. Commit to Git",
+      "titleLines": [
+        "Repo Branches",
+        "Drive Environments"
+      ],
+      "bodyLines": [
+        "The repo is the source of truth for cluster state.",
+        "Branches map cleanly to development and production."
+      ],
+      "badges": [
+        "develop -> dev",
+        "main -> prod"
+      ]
+    },
+    {
+      "id": "applicationset",
+      "kind": "hero",
+      "x": 604,
+      "y": 302,
+      "w": 530,
+      "h": 332,
+      "tone": "future",
+      "icon": "git-branch",
+      "eyebrow": "2. Argo CD control plane",
+      "titleLines": [
+        "ApplicationSet",
+        "Creates Desired State"
+      ],
+      "bodyLines": [
+        "Argo CD watches the Nebulift repo, expands the ApplicationSet,",
+        "and reconciles branch-specific Applications.",
+        "Auto-sync, retries, pruning, and self-heal stay in the loop."
+      ],
+      "badges": [
+        "automated sync",
+        "prune + self-heal",
+        "retry backoff"
+      ]
+    },
+    {
+      "id": "overlays",
+      "kind": "card",
+      "x": 1310,
+      "y": 208,
+      "w": 390,
+      "h": 244,
+      "tone": "slate",
+      "icon": "file-json",
+      "eyebrow": "3. Render manifests",
+      "titleLines": [
+        "Kustomize Overlays"
+      ],
+      "bodyLines": [
+        "Each Application targets an environment overlay.",
+        "Overlays patch namespace, config, and replicas",
+        "on top of the shared base resources."
+      ],
+      "badges": [
+        "development",
+        "production"
+      ]
+    },
+    {
+      "id": "job",
+      "kind": "card",
+      "x": 1310,
+      "y": 610,
+      "w": 392,
+      "h": 254,
+      "tone": "cyan",
+      "icon": "kubernetes",
+      "eyebrow": "4. Apply to cluster",
+      "titleLines": [
+        "Kubernetes Training Job"
+      ],
+      "bodyLines": [
+        "The base manifest defines an indexed Job for",
+        "distributed training with arm64 scheduling,",
+        "headless coordination, and shared volumes."
+      ],
+      "badges": [
+        "indexed pods",
+        "arm64 affinity"
+      ],
+      "techIcons": [
+        "docker",
+        "kubernetes"
+      ]
+    },
+    {
+      "id": "runtime",
+      "kind": "card",
+      "x": 610,
+      "y": 770,
+      "w": 470,
+      "h": 224,
+      "tone": "mint",
+      "icon": "terminal",
+      "eyebrow": "5. Reconcile and observe",
+      "titleLines": [
+        "Continuous Training Runtime"
+      ],
+      "bodyLines": [
+        "Argo CD keeps cluster resources aligned with Git,",
+        "so config changes, image updates, rollbacks, and drift fixes",
+        "all flow through commits instead of manual apply."
+      ],
+      "badges": [
+        "refresh + history",
+        "rollback via Git"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "git",
+      "to": "applicationset",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": -18
+    },
+    {
+      "from": "applicationset",
+      "to": "overlays",
+      "tone": "future",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": -12
+    },
+    {
+      "from": "overlays",
+      "to": "job",
+      "tone": "future",
+      "label": "",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "bend": 0
+    },
+    {
+      "from": "job",
+      "to": "runtime",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "left",
+      "toSide": "right",
+      "bend": 26
+    },
+    {
+      "from": "runtime",
+      "to": "applicationset",
+      "tone": "future",
+      "label": "",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "bend": -58,
+      "dashed": true
+    }
+  ]
+}

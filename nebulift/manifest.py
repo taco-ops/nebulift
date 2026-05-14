@@ -11,7 +11,12 @@ from typing import Any, Optional
 from .cv_prefilter import ArtifactDetector, batch_analyze_images
 from .fits_processor import FITSProcessor
 from .ml_model import QualityPredictor
-from .registry import DEFAULT_REGISTRY_PATH, resolve_model_path
+from .registry import (
+    DEFAULT_LOCAL_SETTINGS_PATH,
+    DEFAULT_REGISTRY_PATH,
+    resolve_model_path,
+    resolve_thresholds,
+)
 
 VALID_LABELS = {"clean", "contaminated", "review"}
 
@@ -35,13 +40,21 @@ def analyze_single_file(
     fits_path: Path,
     model_path: Optional[Path] = None,
     registry_path: Path = DEFAULT_REGISTRY_PATH,
+    settings_path: Path = DEFAULT_LOCAL_SETTINGS_PATH,
     use_default_model: bool = True,
-    clean_threshold: float = 0.7,
-    contaminated_threshold: float = 0.3,
+    use_default_thresholds: bool = True,
+    clean_threshold: Optional[float] = None,
+    contaminated_threshold: Optional[float] = None,
 ) -> dict[str, Any]:
     """Analyze a single FITS file for quality."""
     processor = FITSProcessor()
     detector = ArtifactDetector()
+    resolved_clean_threshold, resolved_contaminated_threshold = resolve_thresholds(
+        clean_threshold=clean_threshold,
+        contaminated_threshold=contaminated_threshold,
+        settings_path=settings_path,
+        use_default_thresholds=use_default_thresholds,
+    )
 
     fits_data = processor.load_fits_file(fits_path)
     if not fits_data:
@@ -52,8 +65,8 @@ def analyze_single_file(
     quality_score = float(analysis["overall_quality_score"])
     cv_label = classify_cv_score(
         quality_score,
-        clean_threshold=clean_threshold,
-        contaminated_threshold=contaminated_threshold,
+        clean_threshold=resolved_clean_threshold,
+        contaminated_threshold=resolved_contaminated_threshold,
     )
 
     ml_prediction = None
@@ -78,6 +91,10 @@ def analyze_single_file(
         "decision_label": decision_label,
         "decision_source": decision_source,
         "model_path": str(active_model_path) if active_model_path else None,
+        "thresholds": {
+            "clean": resolved_clean_threshold,
+            "contaminated": resolved_contaminated_threshold,
+        },
         "ml_prediction": ml_prediction,
     }
 
@@ -132,10 +149,12 @@ def batch_process(
     action: str = "report",
     model_path: Optional[Path] = None,
     registry_path: Path = DEFAULT_REGISTRY_PATH,
+    settings_path: Path = DEFAULT_LOCAL_SETTINGS_PATH,
     use_default_model: bool = True,
     manifest_name: str = "batch_manifest.json",
-    clean_threshold: float = 0.7,
-    contaminated_threshold: float = 0.3,
+    use_default_thresholds: bool = True,
+    clean_threshold: Optional[float] = None,
+    contaminated_threshold: Optional[float] = None,
 ) -> Path:
     """Batch process FITS files and write a JSON manifest."""
     if action not in {"report", "move"}:
@@ -145,6 +164,12 @@ def batch_process(
     processor = FITSProcessor()
     output_dir.mkdir(parents=True, exist_ok=True)
     active_model_path = resolve_model_path(model_path, registry_path, use_default_model)
+    resolved_clean_threshold, resolved_contaminated_threshold = resolve_thresholds(
+        clean_threshold=clean_threshold,
+        contaminated_threshold=contaminated_threshold,
+        settings_path=settings_path,
+        use_default_thresholds=use_default_thresholds,
+    )
 
     fits_files = sorted(
         list(input_dir.glob("*.fits"))
@@ -164,6 +189,10 @@ def batch_process(
                     "output_dir": str(output_dir),
                     "action": action,
                     "model_path": str(active_model_path) if active_model_path else None,
+                    "thresholds": {
+                        "clean": resolved_clean_threshold,
+                        "contaminated": resolved_contaminated_threshold,
+                    },
                     "summary": {
                         "clean": 0,
                         "contaminated": 0,
@@ -201,8 +230,8 @@ def batch_process(
         quality_score = float(analysis["overall_quality_score"])
         decision_label = classify_cv_score(
             quality_score,
-            clean_threshold=clean_threshold,
-            contaminated_threshold=contaminated_threshold,
+            clean_threshold=resolved_clean_threshold,
+            contaminated_threshold=resolved_contaminated_threshold,
         )
         decision_source = "cv"
         ml_prediction = None
@@ -226,8 +255,8 @@ def batch_process(
                 analysis=analysis,
                 cv_label=classify_cv_score(
                     quality_score,
-                    clean_threshold=clean_threshold,
-                    contaminated_threshold=contaminated_threshold,
+                    clean_threshold=resolved_clean_threshold,
+                    contaminated_threshold=resolved_contaminated_threshold,
                 ),
                 decision_label=decision_label,
                 decision_source=decision_source,
@@ -245,8 +274,8 @@ def batch_process(
         "action": action,
         "model_path": str(active_model_path) if active_model_path else None,
         "thresholds": {
-            "clean": clean_threshold,
-            "contaminated": contaminated_threshold,
+            "clean": resolved_clean_threshold,
+            "contaminated": resolved_contaminated_threshold,
         },
         "summary": _manifest_summary(entries),
         "files": entries,

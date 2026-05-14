@@ -51,8 +51,46 @@ class K8sDistributedTrainer(ModelTrainer):
         # Set master node info for distributed coordination
         if master_addr is None:
             master_addr = os.environ.get("MASTER_ADDR", "localhost")
+            # If rank is 0, use own POD_IP to avoid chicken-and-egg problem
+            if self.rank == 0:
+                pod_ip = os.environ.get("POD_IP")
+                if pod_ip:
+                    master_addr = pod_ip
+                    logger.info(f"Rank 0 using POD_IP as MASTER_ADDR: {master_addr}")
         if master_port is None:
             master_port = os.environ.get("MASTER_PORT", "29500")
+
+        # For worker nodes, resolve the headless service to get rank 0's IP
+        if self.rank != 0 and master_addr == os.environ.get("MASTER_ADDR"):
+            # Try to get the IP from the coordinator service
+            import socket
+            import time
+
+            # Wait for rank 0 to be ready
+            max_retries = 30
+            for attempt in range(max_retries):
+                try:
+                    # Try to resolve the headless service + rank 0 pod
+                    # Format: <job-name>-<index>.<headless-service>.<namespace>.svc.cluster.local
+                    job_name = os.environ.get("POD_NAME", "nebulift-training").rsplit(
+                        "-", 2
+                    )[0]
+                    rank_0_dns = f"{job_name}-0.{master_addr}"
+                    logger.info(f"Attempting to resolve rank 0 DNS: {rank_0_dns}")
+                    rank_0_ip = socket.gethostbyname(rank_0_dns)
+                    master_addr = rank_0_ip
+                    logger.info(f"Resolved rank 0 IP: {master_addr}")
+                    break
+                except socket.gaierror:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Could not resolve rank 0, retrying ({attempt + 1}/{max_retries})..."
+                        )
+                        time.sleep(2)
+                    else:
+                        logger.warning(
+                            f"Could not resolve rank 0 DNS, using service name: {master_addr}"
+                        )
 
         os.environ["MASTER_ADDR"] = master_addr
         os.environ["MASTER_PORT"] = master_port

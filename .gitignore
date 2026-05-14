@@ -187,3 +187,6 @@ src/
 
 # local documentation
 local-docs/
+
+# diagram pipeline dependencies
+diagrams/node_modules/
