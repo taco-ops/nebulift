@@ -15,7 +15,19 @@ The current focus is a reliable local CLI workflow for FITS files. Kubernetes, A
 
 ## Workflow Overview
 
-![Nebulift local-first workflow](docs/assets/nebulift-workflow.svg)
+![Nebulift local-first workflow](docs/assets/nebulift-workflow.png)
+
+### Decision Hub
+
+How Nebulift scores each FITS frame and decides its final label — CV heuristics, threshold evaluation, and optional ML override.
+
+![Nebulift Decision Hub](docs/assets/nebulift-decision-hub.svg)
+
+### Compact View
+
+Narrow-width variant of the full workflow diagram, suitable for smaller viewports or embedded docs.
+
+![Nebulift compact workflow](docs/assets/nebulift-workflow-compact.svg)
 
 ## Use Case
 
@@ -291,6 +303,10 @@ The repository includes Kubernetes and Argo CD resources for future distributed 
 - `nebulift/distributed/`: PyTorch distributed training utilities
 
 These resources are useful for infrastructure iteration, but the local training pipeline is the primary supported path today.
+
+### GitOps and Kubernetes Training Flow
+
+![Nebulift future track](docs/assets/nebulift-future-track.svg)
 
 ## Hardware Notes
 

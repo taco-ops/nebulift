@@ -1,0 +1,22 @@
+{
+  "name": "nebulift-diagrams",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "tsx src/render.tsx specs/nebulift-app-flow.json output/nebulift-app-flow.svg && rsvg-convert -w 1600 -h 870 output/nebulift-app-flow.svg -o output/nebulift-app-flow.png",
+    "render:compact": "tsx src/render.tsx specs/nebulift-app-flow-compact.json output/nebulift-app-flow-compact.svg && rsvg-convert -w 1280 -h 940 output/nebulift-app-flow-compact.svg -o output/nebulift-app-flow-compact.png",
+    "render:hub": "tsx src/render.tsx specs/nebulift-decision-hub.json output/nebulift-decision-hub.svg && rsvg-convert -w 1600 -h 900 output/nebulift-decision-hub.svg -o output/nebulift-decision-hub.png",
+    "render:future": "tsx src/render.tsx specs/nebulift-future-track.json output/nebulift-future-track.svg && rsvg-convert -w 1600 -h 980 output/nebulift-future-track.svg -o output/nebulift-future-track.png",
+    "render:all": "npm run render && npm run render:compact && npm run render:hub && npm run render:future"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}

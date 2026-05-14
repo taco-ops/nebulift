@@ -1,0 +1,236 @@
+{
+  "id": "nebulift-app-flow-compact",
+  "title": "Nebulift App Flow",
+  "subtitle": "Compact view of local FITS triage, review, retraining, and model promotion.",
+  "width": 1440,
+  "height": 1060,
+  "legend": [
+    {
+      "label": "Primary local workflow",
+      "tone": "cyan"
+    },
+    {
+      "label": "Feedback and retraining loop",
+      "tone": "violet"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ingest",
+      "kind": "card",
+      "x": 50,
+      "y": 200,
+      "w": 300,
+      "h": 220,
+      "tone": "cyan",
+      "icon": "telescope",
+      "eyebrow": "1. Ingest",
+      "titleLines": [
+        "Raw FITS Session"
+      ],
+      "bodyLines": [
+        "Observing runs arrive as .fits, .fit, or .fts.",
+        "Nebulift sorts from source, originals intact."
+      ],
+      "badges": [
+        "CLI",
+        "Local disk"
+      ]
+    },
+    {
+      "id": "cv",
+      "kind": "card",
+      "x": 400,
+      "y": 200,
+      "w": 320,
+      "h": 220,
+      "tone": "mint",
+      "icon": "python",
+      "eyebrow": "2. Analyze",
+      "titleLines": [
+        "CV Artifact Detector"
+      ],
+      "bodyLines": [
+        "Loads FITS, normalizes frames, and flags streaks,",
+        "clouds, saturation, hot pixels, and quality."
+      ],
+      "badges": [
+        "Python",
+        "Astropy"
+      ]
+    },
+    {
+      "id": "decision",
+      "kind": "card",
+      "x": 760,
+      "y": 200,
+      "w": 310,
+      "h": 220,
+      "tone": "violet",
+      "icon": "brain-circuit",
+      "eyebrow": "3. Decide",
+      "titleLines": [
+        "Thresholds + ML"
+      ],
+      "bodyLines": [
+        "CV thresholds assign clean,",
+        "review, or contaminated labels.",
+        "Promoted models can take over."
+      ],
+      "badges": [
+        "ResNet18",
+        "Promoted defaults"
+      ]
+    },
+    {
+      "id": "manifest",
+      "kind": "card",
+      "x": 1100,
+      "y": 200,
+      "w": 300,
+      "h": 220,
+      "tone": "slate",
+      "icon": "file-json",
+      "eyebrow": "4. Record",
+      "titleLines": [
+        "Manifest + Buckets"
+      ],
+      "bodyLines": [
+        "Each batch writes artifact evidence,",
+        "CV labels, review flags,",
+        "and move destinations."
+      ],
+      "badges": [
+        "JSON",
+        "report / move"
+      ]
+    },
+    {
+      "id": "review",
+      "kind": "card",
+      "x": 1100,
+      "y": 580,
+      "w": 300,
+      "h": 220,
+      "tone": "amber",
+      "icon": "terminal",
+      "eyebrow": "5. Review",
+      "titleLines": [
+        "Human Corrections",
+        "and Evaluation"
+      ],
+      "bodyLines": [
+        "Review writes label fixes to the manifest.",
+        "Calibration uses reviewed sessions",
+        "to sharpen thresholds."
+      ],
+      "badges": []
+    },
+    {
+      "id": "training",
+      "kind": "card",
+      "x": 760,
+      "y": 580,
+      "w": 310,
+      "h": 220,
+      "tone": "pink",
+      "icon": "chart-line",
+      "eyebrow": "6. Train",
+      "titleLines": [
+        "Curated Dataset",
+        "to Training"
+      ],
+      "bodyLines": [
+        "Export class folders from reviewed data",
+        "or turn reviewed manifests into checkpoints."
+      ],
+      "badges": []
+    },
+    {
+      "id": "registry",
+      "kind": "card",
+      "x": 400,
+      "y": 580,
+      "w": 330,
+      "h": 220,
+      "tone": "violet",
+      "icon": "database",
+      "eyebrow": "7. Promote",
+      "titleLines": [
+        "Registry + Settings"
+      ],
+      "bodyLines": [
+        "Model metadata, calibration, and thresholds stay",
+        "in local JSON for trusted defaults."
+      ],
+      "badges": [
+        "model_registry.json"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ingest",
+      "to": "cv",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 0
+    },
+    {
+      "from": "cv",
+      "to": "decision",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 0
+    },
+    {
+      "from": "decision",
+      "to": "manifest",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 0
+    },
+    {
+      "from": "manifest",
+      "to": "review",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "bend": 0
+    },
+    {
+      "from": "review",
+      "to": "training",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "left",
+      "toSide": "right",
+      "bend": 0
+    },
+    {
+      "from": "training",
+      "to": "registry",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "left",
+      "toSide": "right",
+      "bend": 0
+    },
+    {
+      "from": "registry",
+      "to": "cv",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "bend": -40
+    }
+  ]
+}

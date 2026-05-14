@@ -1,0 +1,191 @@
+{
+  "id": "nebulift-decision-hub",
+  "title": "Nebulift Decision Hub",
+  "subtitle": "How Nebulift scores each FITS frame and decides its final label.",
+  "width": 1600,
+  "height": 820,
+  "legend": [
+    {
+      "label": "CV scoring pipeline",
+      "tone": "mint"
+    },
+    {
+      "label": "ML override path",
+      "tone": "violet"
+    },
+    {
+      "label": "Decision output",
+      "tone": "cyan"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "fits",
+      "kind": "card",
+      "x": 60,
+      "y": 300,
+      "w": 330,
+      "h": 220,
+      "tone": "cyan",
+      "icon": "telescope",
+      "eyebrow": "Input",
+      "titleLines": [
+        "FITS Frame"
+      ],
+      "bodyLines": [
+        "A calibrated frame is loaded",
+        "and normalized for analysis."
+      ],
+      "badges": [
+        ".fits / .fit / .fts"
+      ]
+    },
+    {
+      "id": "cv",
+      "kind": "card",
+      "x": 430,
+      "y": 160,
+      "w": 320,
+      "h": 220,
+      "tone": "mint",
+      "icon": "python",
+      "eyebrow": "CV Heuristics",
+      "titleLines": [
+        "Artifact Detection"
+      ],
+      "bodyLines": [
+        "Detects streaks, saturation, hot pixels,",
+        "clouds, and other quality signals.",
+        "Produces a scored artifact report."
+      ],
+      "badges": [
+        "Astropy",
+        "OpenCV"
+      ]
+    },
+    {
+      "id": "thresholds",
+      "kind": "card",
+      "x": 430,
+      "y": 440,
+      "w": 320,
+      "h": 220,
+      "tone": "mint",
+      "icon": "file-json",
+      "eyebrow": "CV Decision",
+      "titleLines": [
+        "Threshold Evaluation"
+      ],
+      "bodyLines": [
+        "Artifact scores are compared against",
+        "calibrated thresholds to assign",
+        "a preliminary label."
+      ],
+      "badges": [
+        "local_settings.json"
+      ]
+    },
+    {
+      "id": "ml",
+      "kind": "card",
+      "x": 830,
+      "y": 160,
+      "w": 340,
+      "h": 220,
+      "tone": "violet",
+      "icon": "brain-circuit",
+      "eyebrow": "Optional ML Override",
+      "titleLines": [
+        "Promoted Model"
+      ],
+      "bodyLines": [
+        "A promoted ResNet18 checkpoint can",
+        "replace the CV label when confidence",
+        "meets the override threshold."
+      ],
+      "badges": [
+        "ResNet18",
+        "Promoted defaults"
+      ]
+    },
+    {
+      "id": "output",
+      "kind": "card",
+      "x": 1220,
+      "y": 300,
+      "w": 320,
+      "h": 220,
+      "tone": "slate",
+      "icon": "file-json",
+      "eyebrow": "Output",
+      "titleLines": [
+        "Explainable JSON Decision"
+      ],
+      "bodyLines": [
+        "Final label, artifact evidence,",
+        "CV scores, and model source are",
+        "written to the batch manifest."
+      ],
+      "badges": [
+        "manifest.json"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "fits",
+      "to": "cv",
+      "tone": "mint",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": -20
+    },
+    {
+      "from": "fits",
+      "to": "thresholds",
+      "tone": "mint",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 20
+    },
+    {
+      "from": "cv",
+      "to": "ml",
+      "tone": "mint",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 0
+    },
+    {
+      "from": "thresholds",
+      "to": "ml",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 0
+    },
+    {
+      "from": "ml",
+      "to": "output",
+      "tone": "violet",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": -20
+    },
+    {
+      "from": "thresholds",
+      "to": "output",
+      "tone": "cyan",
+      "label": "",
+      "fromSide": "right",
+      "toSide": "left",
+      "bend": 20,
+      "dashed": true
+    }
+  ]
+}

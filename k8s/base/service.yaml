@@ -22,7 +22,7 @@ metadata:
 spec:
   selector:
     app: nebulift-training
-    role: coordinator
+    batch.kubernetes.io/job-completion-index: "0"
   ports:
     - name: coordinator
       port: 29500

@@ -21,9 +21,13 @@ from .manifest import (
     review_manifest,
 )
 from .registry import (
+    DEFAULT_LOCAL_SETTINGS_PATH,
     DEFAULT_REGISTRY_PATH,
     print_model_registry,
+    print_threshold_settings,
     promote_model,
+    promote_thresholds,
+    promote_thresholds_from_calibration,
     register_model,
 )
 from .training import train_from_fits, train_from_manifest, train_model
@@ -32,7 +36,9 @@ from .training import train_from_fits, train_from_manifest, train_model
 classify_cv_score = _manifest.classify_cv_score
 open_file_in_viewer = _manifest.open_file_in_viewer
 load_model_registry = _registry.load_model_registry
+load_local_settings = _registry.load_local_settings
 resolve_model_path = _registry.resolve_model_path
+resolve_thresholds = _registry.resolve_thresholds
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -101,8 +107,19 @@ def main() -> None:
         action="store_true",
         help="Disable use of a promoted default model",
     )
-    analyze_parser.add_argument("--clean_threshold", type=float, default=0.7)
-    analyze_parser.add_argument("--contaminated_threshold", type=float, default=0.3)
+    analyze_parser.add_argument(
+        "--settings",
+        type=Path,
+        default=DEFAULT_LOCAL_SETTINGS_PATH,
+        help="Local settings path for promoted thresholds",
+    )
+    analyze_parser.add_argument(
+        "--no-default-thresholds",
+        action="store_true",
+        help="Disable use of promoted default thresholds",
+    )
+    analyze_parser.add_argument("--clean_threshold", type=float)
+    analyze_parser.add_argument("--contaminated_threshold", type=float)
 
     batch_parser = subparsers.add_parser("batch", help="Batch process directory")
     batch_parser.add_argument("input_dir", type=Path, help="Input FITS directory")
@@ -126,8 +143,19 @@ def main() -> None:
         help="Disable use of a promoted default model",
     )
     batch_parser.add_argument("--manifest", default="batch_manifest.json")
-    batch_parser.add_argument("--clean_threshold", type=float, default=0.7)
-    batch_parser.add_argument("--contaminated_threshold", type=float, default=0.3)
+    batch_parser.add_argument(
+        "--settings",
+        type=Path,
+        default=DEFAULT_LOCAL_SETTINGS_PATH,
+        help="Local settings path for promoted thresholds",
+    )
+    batch_parser.add_argument(
+        "--no-default-thresholds",
+        action="store_true",
+        help="Disable use of promoted default thresholds",
+    )
+    batch_parser.add_argument("--clean_threshold", type=float)
+    batch_parser.add_argument("--contaminated_threshold", type=float)
 
     train_parser = subparsers.add_parser(
         "train", help="Train from curated class folders"
@@ -190,6 +218,29 @@ def main() -> None:
     calibrate_parser.add_argument("--min-gap", type=float, default=0.1)
     calibrate_parser.add_argument("--output", type=Path)
 
+    threshold_settings_parser = subparsers.add_parser(
+        "show-thresholds",
+        help="Show promoted default CV thresholds",
+    )
+    threshold_settings_parser.add_argument(
+        "--settings",
+        type=Path,
+        default=DEFAULT_LOCAL_SETTINGS_PATH,
+    )
+
+    promote_thresholds_parser = subparsers.add_parser(
+        "promote-thresholds",
+        help="Promote default CV thresholds",
+    )
+    promote_thresholds_parser.add_argument("--clean_threshold", type=float)
+    promote_thresholds_parser.add_argument("--contaminated_threshold", type=float)
+    promote_thresholds_parser.add_argument("--calibration", type=Path)
+    promote_thresholds_parser.add_argument(
+        "--settings",
+        type=Path,
+        default=DEFAULT_LOCAL_SETTINGS_PATH,
+    )
+
     export_parser = subparsers.add_parser(
         "export-curated",
         help="Export reviewed manifest labels into class folders",
@@ -243,7 +294,9 @@ def main() -> None:
                 args.fits_file,
                 model_path=args.model,
                 registry_path=args.registry,
+                settings_path=args.settings,
                 use_default_model=not args.no_default_model,
+                use_default_thresholds=not args.no_default_thresholds,
                 clean_threshold=args.clean_threshold,
                 contaminated_threshold=args.contaminated_threshold,
             )
@@ -259,6 +312,10 @@ def main() -> None:
             print(f"CV Label: {result['cv_label']}")
             print(f"Decision Label: {result['decision_label']}")
             print(f"Decision Source: {result['decision_source']}")
+            print(f"Clean Threshold: {result['thresholds']['clean']:.3f}")
+            print(
+                "Contaminated Threshold: " f"{result['thresholds']['contaminated']:.3f}"
+            )
         elif args.command == "batch":
             batch_process(
                 args.input_dir,
@@ -266,8 +323,10 @@ def main() -> None:
                 action=args.action,
                 model_path=args.model,
                 registry_path=args.registry,
+                settings_path=args.settings,
                 use_default_model=not args.no_default_model,
                 manifest_name=args.manifest,
+                use_default_thresholds=not args.no_default_thresholds,
                 clean_threshold=args.clean_threshold,
                 contaminated_threshold=args.contaminated_threshold,
             )
@@ -319,6 +378,37 @@ def main() -> None:
                 output_path=args.output,
             )
             print_calibration_report(report)
+        elif args.command == "show-thresholds":
+            print_threshold_settings(args.settings)
+        elif args.command == "promote-thresholds":
+            if args.calibration is not None:
+                if (
+                    args.clean_threshold is not None
+                    or args.contaminated_threshold is not None
+                ):
+                    raise ValueError(
+                        "Use either --calibration or explicit threshold values"
+                    )
+                threshold_record = promote_thresholds_from_calibration(
+                    args.calibration,
+                    settings_path=args.settings,
+                )
+            else:
+                if args.clean_threshold is None or args.contaminated_threshold is None:
+                    raise ValueError(
+                        "Explicit promotion requires --clean_threshold and "
+                        "--contaminated_threshold"
+                    )
+                threshold_record = promote_thresholds(
+                    args.clean_threshold,
+                    args.contaminated_threshold,
+                    settings_path=args.settings,
+                )
+            print(
+                "Promoted thresholds: "
+                f"clean={threshold_record['clean_threshold']:.3f}, "
+                f"contaminated={threshold_record['contaminated_threshold']:.3f}"
+            )
         elif args.command == "export-curated":
             export_manifest_path = export_curated_dataset(
                 args.manifest,

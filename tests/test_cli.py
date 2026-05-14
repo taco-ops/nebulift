@@ -16,10 +16,15 @@ from nebulift.manifest import (
     review_manifest,
 )
 from nebulift.registry import (
+    load_local_settings,
     load_model_registry,
+    print_threshold_settings,
     promote_model,
+    promote_thresholds,
+    promote_thresholds_from_calibration,
     register_model,
     resolve_model_path,
+    resolve_thresholds,
 )
 from nebulift.training import train_from_manifest, train_model
 
@@ -81,6 +86,7 @@ def test_batch_process_defaults_to_json_report(tmp_path):
     }
     assert manifest["files"][0]["decision_label"] == "clean"
     assert manifest["files"][0]["destination_path"] is None
+    assert manifest["thresholds"] == {"clean": 0.7, "contaminated": 0.3}
     assert fits_file.exists()
 
 
@@ -206,6 +212,78 @@ def test_batch_process_can_disable_default_model(tmp_path):
     assert manifest["model_path"] is None
     assert manifest["files"][0]["decision_source"] == "cv"
     mock_predictor.assert_not_called()
+
+
+def test_batch_process_uses_promoted_default_thresholds(tmp_path):
+    """Batch processing should use promoted threshold defaults when unset."""
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    settings_path = tmp_path / "local_settings.json"
+    input_dir.mkdir()
+    fits_file = input_dir / "image.fits"
+    fits_file.write_text("placeholder")
+    promote_thresholds(0.9, 0.4, settings_path=settings_path)
+
+    with patch("nebulift.manifest.batch_analyze_images") as mock_batch:
+        mock_batch.return_value = {str(fits_file): _analysis(0.35)}
+        manifest_path = batch_process(
+            input_dir,
+            output_dir,
+            settings_path=settings_path,
+        )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["thresholds"] == {"clean": 0.9, "contaminated": 0.4}
+    assert manifest["files"][0]["cv_label"] == "contaminated"
+
+
+def test_batch_process_can_disable_promoted_default_thresholds(tmp_path):
+    """Batch processing can ignore promoted thresholds and use built-in defaults."""
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    settings_path = tmp_path / "local_settings.json"
+    input_dir.mkdir()
+    fits_file = input_dir / "image.fits"
+    fits_file.write_text("placeholder")
+    promote_thresholds(0.9, 0.4, settings_path=settings_path)
+
+    with patch("nebulift.manifest.batch_analyze_images") as mock_batch:
+        mock_batch.return_value = {str(fits_file): _analysis(0.35)}
+        manifest_path = batch_process(
+            input_dir,
+            output_dir,
+            settings_path=settings_path,
+            use_default_thresholds=False,
+        )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["thresholds"] == {"clean": 0.7, "contaminated": 0.3}
+    assert manifest["files"][0]["cv_label"] == "review"
+
+
+def test_batch_process_explicit_thresholds_override_promoted_defaults(tmp_path):
+    """Explicit threshold flags should override promoted local defaults."""
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    settings_path = tmp_path / "local_settings.json"
+    input_dir.mkdir()
+    fits_file = input_dir / "image.fits"
+    fits_file.write_text("placeholder")
+    promote_thresholds(0.9, 0.4, settings_path=settings_path)
+
+    with patch("nebulift.manifest.batch_analyze_images") as mock_batch:
+        mock_batch.return_value = {str(fits_file): _analysis(0.35)}
+        manifest_path = batch_process(
+            input_dir,
+            output_dir,
+            settings_path=settings_path,
+            clean_threshold=0.8,
+            contaminated_threshold=0.2,
+        )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["thresholds"] == {"clean": 0.8, "contaminated": 0.2}
+    assert manifest["files"][0]["cv_label"] == "review"
 
 
 def test_review_manifest_records_corrected_label(tmp_path):
@@ -486,6 +564,70 @@ def test_print_calibration_report(capsys):
     captured = capsys.readouterr()
     assert "Recommended clean threshold: 0.700" in captured.out
     assert "Macro F1: 0.800" in captured.out
+
+
+def test_promote_thresholds_persists_settings(tmp_path):
+    """Promoting explicit thresholds should persist them in local settings."""
+    settings_path = tmp_path / "local_settings.json"
+
+    threshold_record = promote_thresholds(0.82, 0.28, settings_path=settings_path)
+    settings = load_local_settings(settings_path)
+
+    assert threshold_record["clean_threshold"] == 0.82
+    assert settings["default_thresholds"]["contaminated_threshold"] == 0.28
+
+
+def test_promote_thresholds_from_calibration_uses_recommended_values(tmp_path):
+    """Calibration promotion should persist the recommended threshold pair."""
+    settings_path = tmp_path / "local_settings.json"
+    calibration_path = tmp_path / "calibration.json"
+    calibration_path.write_text(
+        json.dumps(
+            {
+                "recommended": {
+                    "clean_threshold": 0.76,
+                    "contaminated_threshold": 0.24,
+                }
+            }
+        )
+    )
+
+    promote_thresholds_from_calibration(
+        calibration_path,
+        settings_path=settings_path,
+    )
+    settings = load_local_settings(settings_path)
+
+    assert settings["default_thresholds"]["clean_threshold"] == 0.76
+    assert settings["default_thresholds"]["calibration_path"] == str(calibration_path)
+
+
+def test_resolve_thresholds_prefers_promoted_defaults(tmp_path):
+    """Threshold resolution should use promoted defaults when explicit values are unset."""
+    settings_path = tmp_path / "local_settings.json"
+    promote_thresholds(0.88, 0.22, settings_path=settings_path)
+
+    assert resolve_thresholds(settings_path=settings_path) == (0.88, 0.22)
+
+
+def test_resolve_thresholds_prefers_explicit_values(tmp_path):
+    """Explicit thresholds should override promoted defaults during resolution."""
+    settings_path = tmp_path / "local_settings.json"
+    promote_thresholds(0.88, 0.22, settings_path=settings_path)
+
+    assert resolve_thresholds(0.8, 0.25, settings_path=settings_path) == (0.8, 0.25)
+
+
+def test_print_threshold_settings(capsys, tmp_path):
+    """Threshold settings output should show the promoted defaults."""
+    settings_path = tmp_path / "local_settings.json"
+    promote_thresholds(0.9, 0.4, settings_path=settings_path)
+
+    print_threshold_settings(settings_path)
+
+    captured = capsys.readouterr()
+    assert "Default clean threshold: 0.900" in captured.out
+    assert "Default contaminated threshold: 0.400" in captured.out
 
 
 def test_train_from_manifest_calls_pipeline(tmp_path):
