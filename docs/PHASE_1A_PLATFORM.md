@@ -7,7 +7,7 @@ Phase 1a delivers the MLOps platform that subsequent training, evaluation, and s
 - **MinIO** — single-replica S3-compatible object store, NFS-backed, exposing both the S3 API and the web console through Gateway API HTTPRoutes.
 - **MLflow tracking server** — single-replica, SQLite-on-NFS backend store, configured in `--serve-artifacts` proxy mode so that clients only need the MLflow HTTP endpoint to log and read artifacts.
 
-No trainer code changes ship in Phase 1a. The existing `K8sDistributedTrainer` path continues to checkpoint to NFS as before. MLflow integration in the trainer is deferred to Phase 1b.
+No trainer code changes ship in Phase 1a. The existing `K8sDistributedTrainer` path continues to checkpoint to NFS as before. MLflow integration in the trainer lands in Phase 1b-1 (see `docs/PHASE_1B_TRAINER.md`).
 
 ## Scope and Non-Goals
 
@@ -198,7 +198,7 @@ The `minio-bucket-bootstrap` Job re-runs on the next sync because of the `argocd
 - **No HTTPS.** The Gateway listens on HTTP/80 only. Cert-manager + an HTTPS listener is a separate phase.
 - **No authentication on MLflow.** MLflow has no built-in authentication. Anyone on the LAN who can reach `mlflow.nebulift.local` can write to it. This matches the trust model of the homelab; it must be revisited before any external exposure.
 - **Backups.** NFS snapshots are the only safety net. Add `restic` or similar before relying on MLflow run history.
-- **Trainer integration is deferred** to Phase 1b: `K8sDistributedTrainer` will log params, metrics, and the final checkpoint to MLflow from rank 0.
+- **Trainer integration shipped in Phase 1b-1.** `K8sDistributedTrainer` now logs params, per-epoch metrics, and the final checkpoint to MLflow from rank 0; see `docs/PHASE_1B_TRAINER.md`. Baking a GHCR-published MLflow server image is still deferred (Phase 1b-2).
 
 ## Pointers
 

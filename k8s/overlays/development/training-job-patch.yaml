@@ -28,3 +28,7 @@ spec:
               value: "DEBUG"
             - name: DEBUG_MODE
               value: "true"
+            # Per-overlay MLflow experiment groups dev runs separately
+            # from prod in the MLflow UI without changing application code.
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "nebulift-development"

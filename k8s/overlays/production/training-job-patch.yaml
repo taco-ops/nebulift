@@ -28,3 +28,7 @@ spec:
               value: "INFO"
             - name: ENABLE_METRICS
               value: "true"
+            # Per-overlay MLflow experiment groups prod runs separately
+            # from dev in the MLflow UI without changing application code.
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "nebulift-production"
