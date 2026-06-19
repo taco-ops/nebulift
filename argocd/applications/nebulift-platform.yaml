@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nebulift-platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: nebulift-platform
+    app.kubernetes.io/component: mlops-platform
+    app.kubernetes.io/part-of: nebulift
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"  # Platform deploys before training workloads (wave "1")
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: nebulift
+
+  source:
+    repoURL: https://github.com/taco-ops/nebulift.git
+    targetRevision: main
+    path: k8s/platform/base
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nebulift-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true  # Required for Gateway API resources and large annotations
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+
+  revisionHistoryLimit: 10
+
+  ignoreDifferences:
+    # Sealed secret controller rewrites the unsealed Secret; only track the SealedSecret spec.
+    - group: ""
+      kind: Secret
+      name: minio-root
+      jsonPointers:
+        - /data
+        - /metadata/ownerReferences
+    # MinIO bucket bootstrap Job is recreated via argocd Sync hook; ignore generated selectors.
+    - group: batch
+      kind: Job
+      name: minio-bucket-bootstrap
+      jsonPointers:
+        - /spec/selector
+        - /spec/template/metadata/labels
+
+  info:
+    - name: 'Repository'
+      value: 'https://github.com/taco-ops/nebulift'
+    - name: 'Description'
+      value: 'Nebulift MLOps platform: MinIO object store + MLflow tracking server'
+    - name: 'Phase'
+      value: 'Phase 1a'
+    - name: 'Endpoints'
+      value: 'mlflow.nebulift.local, minio.nebulift.local, s3.nebulift.local'

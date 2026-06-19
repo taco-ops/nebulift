@@ -1,0 +1,38 @@
+# Traefik configuration override for k3s.
+#
+# k3s installs Traefik via HelmChart in kube-system. This HelmChartConfig
+# layers extra values on top of the upstream chart without forking it.
+#
+# This file:
+#   1. Enables Traefik's Gateway API provider (gateway.networking.k8s.io/v1).
+#   2. Tells Traefik to claim the default GatewayClass (auto-created with name
+#      "traefik" when the provider is enabled).
+#
+# Apply once per cluster (kube-system scoped, NOT GitOps-managed by the
+# nebulift AppProject since its destinations are limited to nebulift-*):
+#
+#   kubectl apply -f cluster-bootstrap/traefik/helmchartconfig.yaml
+#   kubectl -n kube-system rollout restart deploy/traefik
+#
+# Verify after rollout:
+#
+#   kubectl get gatewayclass
+#   # Expect: NAME      CONTROLLER                      ACCEPTED   AGE
+#   #        traefik   traefik.io/gateway-controller   True       30s
+#
+# Reference: https://doc.traefik.io/traefik/v3/providers/kubernetes-gateway/
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    providers:
+      kubernetesGateway:
+        enabled: true
+    # Traefik v3 ships Gateway API as a stable provider; no experimental flag.
+    # If you are on Traefik v2.x, also set:
+    #   experimental:
+    #     kubernetesGateway:
+    #       enabled: true

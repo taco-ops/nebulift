@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: nebulift-platform-minio
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+resources:
+  - sealedsecret.yaml
+  - service.yaml
+  - deployment.yaml
+  - bucket-bootstrap-job.yaml
+  - httproute.yaml

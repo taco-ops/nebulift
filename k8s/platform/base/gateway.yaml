@@ -1,0 +1,35 @@
+# Shared Gateway for the nebulift-platform namespace.
+#
+# Listeners:
+#   - HTTP :80 on hostname "*.nebulift.local"
+#
+# HTTPRoutes in this namespace (mlflow, minio, future services) attach to this
+# Gateway via parentRefs.
+#
+# The actual GatewayClass "traefik" is auto-created when Traefik's Gateway API
+# provider is enabled; see cluster-bootstrap/README.md.
+#
+# Add TLS later by adding an HTTPS listener with a certificate Secret (cert-
+# manager or manually managed). For homelab LAN this HTTP-only setup is fine.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: nebulift-platform-gateway
+  namespace: nebulift-platform
+  labels:
+    app.kubernetes.io/name: nebulift-platform-gateway
+    app.kubernetes.io/part-of: nebulift
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: "*.nebulift.local"
+      allowedRoutes:
+        namespaces:
+          # Limit attachable HTTPRoutes to this namespace only. Tighter than
+          # "All" and matches the platform-only scope of this Gateway.
+          from: Same
+        kinds:
+          - kind: HTTPRoute

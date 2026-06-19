@@ -1,0 +1,142 @@
+# MLflow tracking server.
+#
+# Why python:3.11-slim instead of the official ghcr.io/mlflow/mlflow image:
+#   The official MLflow image does NOT include boto3 by default, so S3-backed
+#   artifact storage (our MinIO setup) does not work out of the box. We could
+#   either:
+#     (a) layer boto3 via an initContainer + shared site-packages volume, or
+#     (b) build a custom multi-arch image with mlflow+boto3 baked in, or
+#     (c) install both at pod startup on top of python:3.11-slim.
+#   Option (c) is the simplest reliable cross-arch path for Phase 1a; it adds
+#   ~20-30s to pod startup (only on cold starts). Option (b) is the right
+#   long-term move and is a candidate for Phase 1b.
+#
+# Storage:
+#   - SQLite metadata DB on NFS at /mlflow/db. Single-writer enforced by
+#     replicas=1 + Recreate strategy.
+#   - Artifact bytes go to MinIO via --serve-artifacts proxy mode, so clients
+#     only need MLflow's HTTP endpoint, not S3 creds.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: nebulift-platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  labels:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+    app.kubernetes.io/part-of: nebulift
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mlflow
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mlflow
+        app.kubernetes.io/component: tracking-server
+        app.kubernetes.io/part-of: nebulift
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [arm64]
+      tolerations:
+        - key: kubernetes.io/arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mlflow
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              pip install --quiet --no-cache-dir --user \
+                "mlflow==${MLFLOW_VERSION}" boto3
+              export PATH="${HOME}/.local/bin:${PATH}"
+              mkdir -p /mlflow/db
+              exec mlflow server \
+                --backend-store-uri "${MLFLOW_BACKEND_STORE_URI}" \
+                --artifacts-destination "${MLFLOW_ARTIFACTS_DESTINATION}" \
+                --serve-artifacts \
+                --host "${MLFLOW_HOST}" \
+                --port "${MLFLOW_PORT}"
+          env:
+            # AWS_* env vars are consumed by boto3 (which MLflow uses to talk
+            # to MinIO's S3 API). The MinIO root credentials double as the S3
+            # creds for the mlflow-artifacts bucket.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: accesskey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: secretkey
+            - name: HOME
+              value: /tmp
+          envFrom:
+            - configMapRef:
+                name: mlflow-config
+          ports:
+            - name: http
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+              cpu: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: db
+              mountPath: /mlflow/db
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: db
+          nfs:
+            server: 10.42.0.22
+            path: /exports/cluster-storage/nebulift-platform/mlflow/db
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
