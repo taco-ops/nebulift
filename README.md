@@ -304,9 +304,9 @@ The repository includes Kubernetes and Argo CD resources for distributed trainin
 - `cluster-bootstrap/`: one-time cluster prerequisites (Gateway API CRDs, Traefik Gateway provider); see `cluster-bootstrap/README.md`
 - `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources, including the standalone `nebulift-platform` Application
 - `scripts/seal-minio-secret.sh`: kubeseal helper that rotates the MinIO root credential SealedSecret committed to the platform overlay
-- `nebulift/distributed/`: PyTorch distributed training utilities
+- `nebulift/distributed/`: PyTorch distributed training utilities, including the MLflow tracker introduced in Phase 1b-1 (see `docs/PHASE_1B_TRAINER.md`)
 
-The training overlays are useful for infrastructure iteration, but the local training pipeline is the primary supported path today. The Phase 1a platform is a prerequisite for Phase 1b, which will add MLflow tracking to the distributed trainer.
+The training overlays are useful for infrastructure iteration, but the local training pipeline is the primary supported path today. Phase 1b-1 has shipped: the distributed trainer logs experiments to the Phase 1a MLflow server when `MLFLOW_TRACKING_URI` is set, and falls back to a no-op tracker otherwise.
 
 ### GitOps and Kubernetes Training Flow
 

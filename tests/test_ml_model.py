@@ -208,6 +208,70 @@ class TestModelTrainer:
         assert isinstance(accuracy, float)
         assert 0 <= accuracy <= 100
 
+    def test_train_invokes_epoch_callback_with_metric_dict(self):
+        """``train`` reports a metric dict per epoch so experiment trackers can subscribe.
+
+        The callback must receive a 1-based epoch number and a dict with
+        the train/val loss + accuracy plus the current learning rate.
+        Failures raised inside the callback must not abort training (a
+        broken observer cannot bring down a real K8s job).
+        """
+        dataset = [
+            (torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item())
+            for _ in range(4)
+        ]
+        loader = [
+            (
+                torch.stack([item[0] for item in dataset[:2]]),
+                torch.tensor([item[1] for item in dataset[:2]]),
+            )
+            for _ in range(2)
+        ]
+
+        calls: list[tuple[int, dict[str, float]]] = []
+
+        def callback(epoch_num: int, metrics: dict[str, float]) -> None:
+            calls.append((epoch_num, dict(metrics)))
+
+        history = self.trainer.train(
+            loader,
+            loader,
+            epochs=2,
+            epoch_callback=callback,
+        )
+
+        assert [epoch for epoch, _ in calls] == [1, 2]
+        for _, metrics in calls:
+            assert set(metrics) == {
+                "train_loss",
+                "train_accuracy",
+                "val_loss",
+                "val_accuracy",
+                "learning_rate",
+            }
+            assert all(isinstance(v, float) for v in metrics.values())
+        assert len(history["train_losses"]) == 2
+
+    def test_train_swallows_epoch_callback_errors(self):
+        """A throwing callback is logged and ignored; training still completes."""
+        dataset = [
+            (torch.randn(3, 224, 224), torch.randint(0, 2, (1,)).item())
+            for _ in range(2)
+        ]
+        loader = [
+            (
+                torch.stack([item[0] for item in dataset[:2]]),
+                torch.tensor([item[1] for item in dataset[:2]]),
+            )
+        ]
+
+        def boom(_epoch: int, _metrics: dict[str, float]) -> None:
+            raise RuntimeError("tracker exploded")
+
+        # Should not raise; history should still come back populated.
+        history = self.trainer.train(loader, loader, epochs=1, epoch_callback=boom)
+        assert history["train_losses"]  # at least one epoch recorded
+
 
 class TestQualityPredictor:
     """Test cases for QualityPredictor class."""

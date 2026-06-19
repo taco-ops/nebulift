@@ -43,6 +43,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Experiment tracking dependencies, required only for the distributed
+# Kubernetes trainer when MLFLOW_TRACKING_URI is configured. Kept optional
+# so the local CLI install stays slim.
+tracking = [
+    "mlflow>=2.20.0,<3.0.0",
+]
+
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",

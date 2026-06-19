@@ -61,6 +61,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: MASTER_ADDR
               value: "nebulift-training-headless"
             - name: MASTER_PORT
@@ -69,6 +73,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+            # MLflow experiment-tracking: rank 0 only emits runs. Points
+            # at the Phase 1a in-cluster MLflow Service. Empty / missing
+            # value disables tracking and the trainer still succeeds.
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow.nebulift-platform.svc.cluster.local:5000"
 
           resources:
             requests:

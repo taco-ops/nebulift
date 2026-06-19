@@ -39,6 +39,11 @@ LABEL_IDS = {label_name: label_id for label_id, label_name in LABEL_NAMES.items(
 
 ProgressCallback = Callable[[int, int, str], None]
 BatchCallback = Callable[[int, int], None]
+# Invoked at the end of every training epoch with the 1-based epoch number
+# and a dict of summary metrics (train/val loss + accuracy, learning rate).
+# Used by experiment-tracking integrations (e.g. MLflow) to stream per-epoch
+# scalars without coupling the trainer to any specific backend.
+EpochCallback = Callable[[int, dict[str, float]], None]
 
 
 class AstroImageDataset(Dataset):
@@ -298,6 +303,7 @@ class ModelTrainer:
         epochs: int = 20,
         save_path: Optional[str] = None,
         progress_callback: Optional[ProgressCallback] = None,
+        epoch_callback: Optional[EpochCallback] = None,
     ) -> dict[str, list[float]]:
         """
         Train the model for multiple epochs.
@@ -310,6 +316,11 @@ class ModelTrainer:
             progress_callback: Optional callback receiving current step, total
                 step count (``epochs * (train_batches + val_batches)``), and a
                 short message such as ``"e3/50 train"`` after each batch.
+            epoch_callback: Optional callback invoked once per epoch with the
+                1-based epoch number and a metrics dict (``train_loss``,
+                ``train_accuracy``, ``val_loss``, ``val_accuracy``,
+                ``learning_rate``). Errors raised inside the callback are
+                logged and swallowed so a buggy observer cannot abort training.
 
         Returns:
             Dictionary containing training history
@@ -372,6 +383,29 @@ class ModelTrainer:
                 logger.info(
                     f"Saved best model with validation accuracy: {val_acc:.2f}%",
                 )
+
+            if epoch_callback is not None:
+                # Guard against observer bugs: a broken tracker must never
+                # interrupt the run. We log + continue so the K8s Job still
+                # produces its checkpoint artifact.
+                try:
+                    epoch_callback(
+                        epoch + 1,
+                        {
+                            "train_loss": float(train_loss),
+                            "train_accuracy": float(train_acc),
+                            "val_loss": float(val_loss),
+                            "val_accuracy": float(val_acc),
+                            "learning_rate": float(
+                                self.optimizer.param_groups[0]["lr"],
+                            ),
+                        },
+                    )
+                except Exception:  # pragma: no cover - defensive logging path
+                    logger.exception(
+                        "epoch_callback raised on epoch %d; continuing training",
+                        epoch + 1,
+                    )
 
         return {
             "train_losses": self.train_losses,
