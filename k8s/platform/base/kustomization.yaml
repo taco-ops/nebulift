@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: nebulift-platform-base
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Namespace is rendered first so that all child resources land in
+# nebulift-platform. Argo CD also has `CreateNamespace=true` as a backstop in
+# the Application sync options.
+resources:
+  - namespace.yaml
+  - gateway.yaml
+  - minio/
+  - mlflow/
+
+# `labels` with `includeSelectors: false` is preferred over the deprecated
+# `commonLabels` field because pod selectors are immutable; mutating these
+# labels after rollout would otherwise break in-place updates.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: nebulift
+      app.kubernetes.io/managed-by: argocd
+
+# Custom annotation tags this revision with the MLOps roadmap phase so it is
+# easy to identify resources across `kubectl describe` output without
+# overloading `app.kubernetes.io/version`, which is reserved for software
+# versions per the well-known label spec.
+commonAnnotations:
+  nebulift.io/phase: "1a"
