@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Gateway API v1 (GA) standard channel CRDs.
+#
+# Channels:
+#   - standard: GA APIs only (GatewayClass, Gateway, HTTPRoute, ReferenceGrant).
+#   - experimental: includes TCPRoute, UDPRoute, TLSRoute, GRPCRoute, etc.
+#
+# Pin the version explicitly. Bump deliberately; new minor versions occasionally
+# tighten validation in ways that reject previously-accepted manifests.
+#
+# Apply once per cluster (cluster-scoped CRDs):
+#   kubectl apply -k cluster-bootstrap/gateway-api
+#
+# Upgrade procedure:
+#   1. Change the URL version below.
+#   2. Re-run `kubectl apply -k cluster-bootstrap/gateway-api`.
+#   3. Restart Traefik to pick up new CRD schemas: kubectl -n kube-system rollout restart deploy/traefik
+resources:
+  - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
