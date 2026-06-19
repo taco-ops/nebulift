@@ -21,7 +21,7 @@ commonAnnotations:
 
 images:
   - name: ghcr.io/taco-ops/nebulift
-    newTag: latest
+    newTag: latest  # CircleCI pushes :latest only on main-branch builds
 
 patchesStrategicMerge:
   - training-job-patch.yaml
