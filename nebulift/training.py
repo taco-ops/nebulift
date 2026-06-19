@@ -20,7 +20,22 @@ from .ml_model import (
 ProgressCallback = Callable[[int, int, str], None]
 
 
-def _collect_class_directory_records(data_dir: Path) -> list[dict[str, Any]]:
+def collect_class_directory_records(data_dir: Path) -> list[dict[str, Any]]:
+    """Walk a class-folder dataset and return ``{path, label, label_name}`` records.
+
+    The dataset is expected to contain one subdirectory per class in
+    :data:`nebulift.ml_model.LABEL_IDS` (``clean``, ``contaminated``,
+    ``review``). FITS files are discovered recursively within each class
+    subdirectory. Missing class directories are silently skipped, which
+    allows callers to operate on partial datasets.
+
+    Args:
+        data_dir: Root directory containing per-class subdirectories.
+
+    Returns:
+        Sorted list of record dictionaries, deterministic for a given
+        directory layout.
+    """
     records = []
     patterns = ["*.fits", "*.fit", "*.fts"]
     for label_name, label_id in LABEL_IDS.items():
@@ -37,6 +52,12 @@ def _collect_class_directory_records(data_dir: Path) -> list[dict[str, Any]]:
                     },
                 )
     return sorted(records, key=lambda record: str(record["path"]))
+
+
+def _collect_class_directory_records(data_dir: Path) -> list[dict[str, Any]]:
+    # Deprecated private alias; kept for backwards compatibility within
+    # this module. New callers should use ``collect_class_directory_records``.
+    return collect_class_directory_records(data_dir)
 
 
 def train_model(

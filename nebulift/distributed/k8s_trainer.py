@@ -7,17 +7,24 @@ Raspberry Pi 5 nodes in a Kubernetes cluster using CPU-only PyTorch.
 
 import logging
 import os
-from typing import TYPE_CHECKING, Callable, Optional, Tuple
+import sys
+from pathlib import Path
+from typing import Any, Callable, Optional, Tuple
 
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
-if TYPE_CHECKING:
-    from ..ml_model import AstroQualityClassifier
-
-from ..ml_model import ModelTrainer
+from ..ml_model import (
+    LABEL_IDS,
+    AstroImageDataset,
+    AstroQualityClassifier,
+    ModelTrainer,
+    create_data_transforms,
+)
+from ..training import collect_class_directory_records
 
 logger = logging.getLogger(__name__)
 
@@ -244,105 +251,190 @@ class K8sDistributedTrainer(ModelTrainer):
         return self.rank == 0
 
 
+def _build_distributed_loaders(
+    train_records: list[dict[str, Any]],
+    val_records: list[dict[str, Any]],
+    batch_size: int,
+    world_size: int,
+    rank: int,
+    num_workers: int = 0,
+) -> Tuple[DataLoader, DataLoader]:
+    """Build train and validation DataLoaders for the distributed job.
+
+    The training loader is sharded across ranks via ``DistributedSampler``
+    so each rank sees a disjoint subset of the training data. The
+    validation loader is intentionally **not** sharded: each rank
+    evaluates against the full held-out set so per-rank ``val_accuracy``
+    figures are directly comparable. This trades extra compute for
+    correctness while distributed metric reduction is not yet wired in.
+    """
+    # Local import to avoid circular dependency on the FITSProcessor at
+    # module import time (the package is only present when training).
+    from ..fits_processor import FITSProcessor
+
+    fits_processor = FITSProcessor()
+    train_dataset = AstroImageDataset(
+        [record["path"] for record in train_records],
+        [record["label"] for record in train_records],
+        transform=create_data_transforms(train=True),
+        fits_processor=fits_processor,
+    )
+    val_dataset = AstroImageDataset(
+        [record["path"] for record in val_records],
+        [record["label"] for record in val_records],
+        transform=create_data_transforms(train=False),
+        fits_processor=fits_processor,
+    )
+
+    if world_size > 1:
+        train_sampler: Optional[DistributedSampler] = DistributedSampler(
+            train_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=True,
+        )
+    else:
+        train_sampler = None
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        sampler=train_sampler,
+        shuffle=train_sampler is None,
+        num_workers=num_workers,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+    return train_loader, val_loader
+
+
+def _save_unwrapped_checkpoint(
+    trainer: "K8sDistributedTrainer", model_output_path: Path
+) -> None:
+    """Persist the trainer's underlying model via ``ModelCheckpoint``.
+
+    Unwraps the ``DistributedDataParallel`` shell before saving so the
+    resulting checkpoint is interchangeable with locally trained
+    artifacts (no ``module.`` prefix on tensor keys).
+    """
+    from ..model_persistence import ModelCheckpoint
+
+    wrapped = trainer.model
+    underlying = (
+        wrapped.module if isinstance(wrapped, DistributedDataParallel) else wrapped
+    )
+    model_output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        trainer.model = underlying  # type: ignore[assignment]
+        ModelCheckpoint.save_model(trainer, model_output_path)
+    finally:
+        trainer.model = wrapped
+
+
 def main() -> None:
-    """Main entry point for Kubernetes distributed training."""
-    import sys
+    """Run a distributed training job inside a Kubernetes pod.
 
-    import torch
-    from torch.utils.data import DataLoader, TensorDataset
+    Reads runtime configuration from the environment (typically populated
+    by the training-job ConfigMap):
 
-    from ..ml_model import AstroQualityClassifier
+    - ``TRAIN_DATA_PATH`` / ``VAL_DATA_PATH``: directories containing
+      ``clean/``, ``contaminated/``, and ``review/`` subdirectories with
+      FITS files.
+    - ``MODEL_OUTPUT_PATH``: directory where the final checkpoint is
+      written by rank 0 only.
+    - ``EPOCHS``, ``BATCH_SIZE``, ``LEARNING_RATE``: training
+      hyperparameters.
+    - ``RANK``, ``WORLD_SIZE``, ``MASTER_ADDR``, ``MASTER_PORT``:
+      distributed-training coordination (provided by the K8s Job's
+      Indexed-completion plumbing).
 
-    # Setup logging
+    Exits non-zero on any failure so the Job's ``backoffLimit`` can take
+    effect.
+    """
     logging.basicConfig(
-        level=logging.INFO,
+        level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    train_dir = Path(os.environ.get("TRAIN_DATA_PATH", "/data/train"))
+    val_dir = Path(os.environ.get("VAL_DATA_PATH", "/data/val"))
+    model_output_dir = Path(os.environ.get("MODEL_OUTPUT_PATH", "/models"))
+    model_output_path = model_output_dir / "nebulift_distributed.pth"
+    epochs = int(os.environ.get("EPOCHS", "10"))
+    batch_size = int(os.environ.get("BATCH_SIZE", "32"))
+    learning_rate = float(os.environ.get("LEARNING_RATE", "0.001"))
+    num_workers = int(os.environ.get("NUM_WORKERS", "0"))
+
+    rank = int(os.environ.get("RANK", "0"))
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+
     logger.info(
-        f"Starting Kubernetes distributed training on rank {os.environ.get('RANK', 'unknown')}"
+        "Distributed training start: rank=%d, world_size=%d, train_dir=%s, "
+        "val_dir=%s, epochs=%d, batch_size=%d, learning_rate=%f",
+        rank,
+        world_size,
+        train_dir,
+        val_dir,
+        epochs,
+        batch_size,
+        learning_rate,
     )
 
     try:
-        # Get environment variables
-        world_size = int(os.environ.get("WORLD_SIZE", 1))
-        rank_str = os.environ.get("RANK", "0")
-        if not rank_str or rank_str == "":
-            # Fallback: use a hash of the hostname as rank
-            import socket
-
-            hostname = socket.gethostname()
-            rank = hash(hostname) % world_size
-            logger.warning(f"RANK not set, using hostname-based rank: {rank}")
-        elif rank_str.startswith("nebulift-training-"):
-            # Extract rank from pod name (e.g., "nebulift-training-abc123" -> hash-based rank)
-            import hashlib
-
-            pod_name = rank_str
-            rank = (
-                int(
-                    hashlib.md5(pod_name.encode(), usedforsecurity=False).hexdigest(),
-                    16,
-                )
-                % world_size
+        train_records = collect_class_directory_records(train_dir)
+        val_records = collect_class_directory_records(val_dir)
+        if not train_records:
+            raise RuntimeError(
+                f"No FITS files found under {train_dir}. Expected per-class "
+                "subdirectories (clean/, contaminated/, review/)."
             )
-            logger.info(f"Derived rank {rank} from pod name: {pod_name}")
-        else:
-            rank = int(rank_str)
-
-        master_addr = os.environ.get("MASTER_ADDR", "localhost")
-        master_port = int(os.environ.get("MASTER_PORT", 29500))
+        if not val_records:
+            raise RuntimeError(
+                f"No FITS files found under {val_dir}. Expected per-class "
+                "subdirectories (clean/, contaminated/, review/)."
+            )
 
         logger.info(
-            f"Distributed training config: world_size={world_size}, rank={rank}, master={master_addr}:{master_port}"
+            "Discovered %d training records and %d validation records",
+            len(train_records),
+            len(val_records),
         )
 
-        # Set environment variables for the trainer
-        os.environ["WORLD_SIZE"] = str(world_size)
-        os.environ["RANK"] = str(rank)
-        os.environ["MASTER_ADDR"] = master_addr
-        os.environ["MASTER_PORT"] = str(master_port)
+        train_loader, val_loader = _build_distributed_loaders(
+            train_records,
+            val_records,
+            batch_size=batch_size,
+            world_size=world_size,
+            rank=rank,
+            num_workers=num_workers,
+        )
 
-        # Create a simple model for testing
-        model = AstroQualityClassifier(pretrained=False)
-
-        # Create dummy training data for demonstration
-        dummy_images = torch.randn(100, 3, 224, 224)  # 100 dummy images
-        dummy_labels = torch.randint(0, 2, (100,))  # Binary labels
-
-        dataset = TensorDataset(dummy_images, dummy_labels)
-        dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
-
-        # Initialize distributed trainer
+        model = AstroQualityClassifier(
+            num_classes=len(LABEL_IDS),
+            pretrained=False,
+        )
         trainer = K8sDistributedTrainer(
-            model=model,
-            backend="gloo",  # CPU-only backend for RPi5
+            model,
+            learning_rate=learning_rate,
+            backend=os.environ.get("BACKEND", "gloo"),
         )
 
-        logger.info(
-            f"Rank {rank}: Starting distributed training with {len(dataloader)} batches"
-        )
+        try:
+            trainer.train(train_loader, val_loader, epochs=epochs)
+            if trainer.is_main_process():
+                _save_unwrapped_checkpoint(trainer, model_output_path)
+                logger.info("Checkpoint persisted to %s", model_output_path)
+        finally:
+            trainer.cleanup()
 
-        # Run a simple training loop for demonstration
-        for epoch in range(2):  # Just 2 epochs for demo
-            for batch_idx, (data, targets) in enumerate(dataloader):
-                # Basic forward pass for demonstration
-                outputs = trainer.model(data)
-                loss = torch.nn.functional.cross_entropy(outputs, targets)
+        logger.info("Rank %d: training completed successfully", rank)
 
-                logger.info(
-                    f"Rank {rank}, Epoch {epoch}, Batch {batch_idx}: Loss = {loss.item():.4f}"
-                )
-
-                if batch_idx >= 2:  # Only run a few batches for demo
-                    break
-
-        trainer.cleanup()
-        logger.info(f"Rank {rank}: Training completed successfully")
-
-    except Exception as e:
-        rank_str = os.environ.get("RANK", "unknown")
-        logger.error(f"Training failed on rank {rank_str}: {e}")
+    except Exception:
+        logger.exception("Training failed on rank %d", rank)
         sys.exit(1)
 
 
