@@ -149,6 +149,23 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Ensure Docker daemon is running
+          command: |
+            # ubuntu-2404:current has Docker preinstalled but does not always
+            # auto-start the daemon before the first job step runs.
+            sudo systemctl enable --now docker.service 2>/dev/null || sudo service docker start || true
+            for i in $(seq 1 30); do
+              if docker info >/dev/null 2>&1; then
+                echo "Docker daemon ready after ${i}s"
+                docker version
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Docker daemon failed to start within 30s" >&2
+            sudo systemctl status docker.service --no-pager || true
+            exit 1
+      - run:
           name: Set up QEMU for multi-arch emulation
           command: docker run --privileged --rm tonistiigi/binfmt:latest --install all
       - run:
