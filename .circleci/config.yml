@@ -158,7 +158,16 @@ jobs:
             docker buildx inspect --bootstrap
       - run:
           name: Authenticate to GHCR
-          command: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          command: |
+            # GHCR_USERNAME is optional; falls back to the CircleCI project
+            # username (taco-ops). GHCR accepts the org name as the docker
+            # login user as long as GHCR_TOKEN is a PAT with write:packages.
+            GHCR_USER="${GHCR_USERNAME:-$CIRCLE_PROJECT_USERNAME}"
+            if [ -z "$GHCR_TOKEN" ]; then
+              echo "ERROR: GHCR_TOKEN is not set; attach the 'ghcr' context to this job." >&2
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - run:
           name: Build and push multi-arch image
           command: |
