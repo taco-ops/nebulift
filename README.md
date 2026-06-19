@@ -57,6 +57,7 @@ Implemented:
 - Local FITS-to-model training pipeline through `nebulift train-from-fits`
 - Local manifest-to-model training pipeline through `nebulift train-from-manifest`
 - Model checkpointing, metadata, and versioning utilities
+- CLI progress bars for `analyze`, `batch`, `train`, `train-from-fits`, and `train-from-manifest`
 - Docker, Kubernetes, Kustomize, Argo CD, and CircleCI configuration
 
 Not yet complete:

@@ -1,15 +1,17 @@
 """
 Model Persistence and Checkpoint Management
 
-This module handles saving, loading, and versioning of trained models
-with comprehensive metadata and training state.
+This module handles saving and loading of trained models with
+comprehensive metadata and training state. Higher-level registry and
+promotion workflows live in :mod:`nebulift.registry` (file-backed
+default) and will be superseded by MLflow tracking in a future phase.
 """
 
 import datetime
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Union
 
 import torch
 
@@ -264,120 +266,3 @@ class ModelCheckpoint:
                 info["detailed_metadata"] = json_metadata
 
         return info
-
-
-class ModelVersioning:
-    """Handles model versioning and model registry."""
-
-    def __init__(self, models_dir: Union[str, Path]):
-        """
-        Initialize model versioning.
-
-        Args:
-            models_dir: Directory to store versioned models
-        """
-        self.models_dir = Path(models_dir)
-        self.models_dir.mkdir(parents=True, exist_ok=True)
-        self.registry_file = self.models_dir / "model_registry.json"
-
-    def save_versioned_model(
-        self,
-        trainer: "ModelTrainer",
-        model_name: str,
-        version: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> str:
-        """
-        Save model with automatic versioning.
-
-        Args:
-            trainer: ModelTrainer instance
-            model_name: Name for the model
-            version: Version string (auto-generated if not provided)
-            tags: Additional tags for the model
-
-        Returns:
-            Path to saved model
-        """
-        if version is None:
-            version = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        model_path = self.models_dir / f"{model_name}_v{version}.pth"
-
-        # Save model
-        ModelCheckpoint.save_model(trainer, model_path)
-
-        # Update registry
-        self._update_registry(model_name, version, str(model_path), tags or {})
-
-        logger.info(f"Model saved with version: {model_name}_v{version}")
-        return str(model_path)
-
-    def load_latest_model(self, model_name: str, device: str = "cpu") -> "ModelTrainer":
-        """
-        Load the latest version of a named model.
-
-        Args:
-            model_name: Name of the model to load
-            device: Device to load on
-
-        Returns:
-            ModelTrainer with latest model
-        """
-        registry = self._load_registry()
-
-        if model_name not in registry:
-            raise ValueError(f"Model {model_name} not found in registry")
-
-        versions = registry[model_name]["versions"]
-        if not versions:
-            raise ValueError(f"No versions found for model {model_name}")
-
-        # Get latest version (assuming versions are sorted by timestamp)
-        latest_version = max(versions.keys())
-        model_path = versions[latest_version]["path"]
-
-        logger.info(f"Loading latest model: {model_name}_v{latest_version}")
-        return ModelCheckpoint.load_model(model_path, device)
-
-    def list_models(self) -> Dict[str, Any]:
-        """
-        List all registered models.
-
-        Returns:
-            Dictionary with model information
-        """
-        return self._load_registry()
-
-    def _load_registry(self) -> dict[str, Any]:
-        """Load model registry from file."""
-        if self.registry_file.exists():
-            with open(self.registry_file) as f:
-                registry_data: dict[str, Any] = json.load(f)
-                return registry_data
-        return {}
-
-    def _update_registry(
-        self,
-        model_name: str,
-        version: str,
-        path: str,
-        tags: Dict[str, str],
-    ) -> None:
-        """Update model registry with new version."""
-        registry = self._load_registry()
-
-        if model_name not in registry:
-            registry[model_name] = {
-                "created": datetime.datetime.now().isoformat(),
-                "versions": {},
-            }
-
-        registry[model_name]["versions"][version] = {
-            "path": path,
-            "created": datetime.datetime.now().isoformat(),
-            "tags": tags,
-        }
-
-        with open(self.registry_file, "w") as f:
-            json.dump(registry, f, indent=2)

@@ -141,6 +141,72 @@ jobs:
           no_output_timeout: 20m
       - save_uv_cache
 
+  image_build:
+    machine:
+      image: ubuntu-2404:current
+      docker_layer_caching: true
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: Ensure Docker daemon is running
+          command: |
+            # ubuntu-2404:current has Docker preinstalled but does not always
+            # auto-start the daemon before the first job step runs.
+            sudo systemctl enable --now docker.service 2>/dev/null || sudo service docker start || true
+            for i in $(seq 1 30); do
+              if docker info >/dev/null 2>&1; then
+                echo "Docker daemon ready after ${i}s"
+                docker version
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Docker daemon failed to start within 30s" >&2
+            sudo systemctl status docker.service --no-pager || true
+            exit 1
+      - run:
+          name: Set up QEMU for multi-arch emulation
+          command: docker run --privileged --rm tonistiigi/binfmt:latest --install all
+      - run:
+          name: Create buildx builder
+          command: |
+            docker buildx create --use --name nebulift-builder --driver docker-container
+            docker buildx inspect --bootstrap
+      - run:
+          name: Authenticate to GHCR
+          command: |
+            # GHCR_USERNAME is optional; falls back to the CircleCI project
+            # username (taco-ops). GHCR accepts the org name as the docker
+            # login user as long as GHCR_TOKEN is a PAT with write:packages.
+            GHCR_USER="${GHCR_USERNAME:-$CIRCLE_PROJECT_USERNAME}"
+            if [ -z "$GHCR_TOKEN" ]; then
+              echo "ERROR: GHCR_TOKEN is not set; attach the 'ghcr' context to this job." >&2
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+      - run:
+          name: Build and push multi-arch image
+          command: |
+            set -euo pipefail
+            # OCI repository names must be lowercase; CircleCI preserves the
+            # GitHub display case (e.g. "Taco-Ops/Nebulift").
+            IMAGE_PATH=$(echo "${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}" | tr '[:upper:]' '[:lower:]')
+            IMAGE="ghcr.io/${IMAGE_PATH}"
+            SHORT_SHA="${CIRCLE_SHA1:0:7}"
+            BRANCH_TAG=$(echo "${CIRCLE_BRANCH//\//-}" | tr '[:upper:]' '[:lower:]')
+            TAG_ARGS=(--tag "${IMAGE}:${SHORT_SHA}" --tag "${IMAGE}:${BRANCH_TAG}")
+            if [ "$CIRCLE_BRANCH" = "main" ]; then
+              TAG_ARGS+=(--tag "${IMAGE}:latest")
+            fi
+            docker buildx build \
+              --platform linux/arm64,linux/amd64 \
+              "${TAG_ARGS[@]}" \
+              --cache-from "type=registry,ref=${IMAGE}:buildcache" \
+              --cache-to "type=registry,ref=${IMAGE}:buildcache,mode=max" \
+              --push \
+              .
+
 workflows:
   ci:
     jobs:
@@ -154,6 +220,11 @@ workflows:
       - package_build:
           requires:
             - lint_and_typecheck
+      - image_build:
+          requires:
+            - test_suite
+          context:
+            - ghcr
 
   training_pipeline:
     when: << pipeline.parameters.run-training-pipeline >>
