@@ -1,0 +1,124 @@
+# MinIO standalone single-replica deployment.
+#
+# Trade-offs:
+#   - Single replica keeps the homelab footprint small and avoids MinIO's
+#     erasure-coding requirements that need multiple raw disks.
+#   - Storage is NFS-backed via direct volume mount. MinIO officially recommends
+#     local block storage; for homelab single-writer workloads this works but
+#     under heavy concurrency you may see slow operations. If issues appear,
+#     switch to a hostPath-on-local-disk + nodeAffinity (see README).
+#   - Recreate strategy avoids two replicas mounting the same NFS path during
+#     a rolling update (which would corrupt MinIO's directory layout).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: nebulift-platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: object-storage
+    app.kubernetes.io/part-of: nebulift
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/component: object-storage
+        app.kubernetes.io/part-of: nebulift
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [arm64]
+      tolerations:
+        - key: kubernetes.io/arch
+          operator: Equal
+          value: arm64
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: minio
+          # Pin to a known multi-arch release. Bump deliberately and verify
+          # arm64 manifest exists at quay.io/minio/minio.
+          image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
+          imagePullPolicy: IfNotPresent
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+            - --address
+            - ":9000"
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: accesskey
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root
+                  key: secretkey
+            - name: MINIO_BROWSER_REDIRECT_URL
+              value: http://minio.nebulift.local
+            # Quiet the storage-class warning for single-disk standalone mode.
+            - name: MINIO_STORAGE_CLASS_STANDARD
+              value: "EC:0"
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+              cpu: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          nfs:
+            server: 10.42.0.22
+            path: /exports/cluster-storage/nebulift-platform/minio

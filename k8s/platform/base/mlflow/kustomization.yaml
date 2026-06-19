@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: nebulift-platform-mlflow
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+resources:
+  - configmap.yaml
+  - service.yaml
+  - deployment.yaml
+  - httproute.yaml

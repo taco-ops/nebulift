@@ -1,0 +1,56 @@
+# HTTPRoutes exposing MinIO via the platform Gateway.
+#
+# Two routes:
+#   - minio.nebulift.local -> port 9001 (web console UI)
+#   - s3.nebulift.local    -> port 9000 (S3 API; MLflow + boto3 clients hit this)
+#
+# Keeping them on distinct hostnames avoids path-rewrite headaches and lets the
+# S3 API speak its own protocol on the root path.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: minio-console
+  namespace: nebulift-platform
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: object-storage
+    app.kubernetes.io/part-of: nebulift
+spec:
+  parentRefs:
+    - name: nebulift-platform-gateway
+      sectionName: http
+  hostnames:
+    - minio.nebulift.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: minio
+          port: 9001
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: minio-s3
+  namespace: nebulift-platform
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: object-storage
+    app.kubernetes.io/part-of: nebulift
+spec:
+  parentRefs:
+    - name: nebulift-platform-gateway
+      sectionName: http
+  hostnames:
+    - s3.nebulift.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: minio
+          port: 9000
