@@ -93,6 +93,18 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
+# mlflow (added in Phase 1b-1 via the 'tracking' extra) and its transitive
+# opentelemetry dependency are untyped from our perspective and contain
+# Python 3.10+ 'match' syntax that mypy's currently-pinned python_version
+# (3.9) cannot parse. Treat them as opaque black boxes: skip following
+# imports into them, ignore missing stubs. This matches how the isolated
+# pre-commit mypy venv already behaves (it doesn't install mlflow at all)
+# and keeps CI honest without forcing a python_version bump in this PR.
+[[tool.mypy.overrides]]
+module = ["mlflow", "mlflow.*", "opentelemetry", "opentelemetry.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
