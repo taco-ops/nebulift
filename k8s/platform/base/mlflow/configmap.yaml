@@ -12,11 +12,12 @@ data:
   # + Recreate strategy. The MLFLOW_S3_ENDPOINT_URL points at the in-cluster
   # MinIO Service; clients reach MLflow via the HTTPRoute and never need
   # direct S3 creds because --serve-artifacts has MLflow proxy artifact I/O.
+  #
+  # The MLflow server version is no longer set here; as of Phase 1b-2 it is
+  # baked into ghcr.io/taco-ops/nebulift-mlflow via docker/mlflow/Dockerfile.
+  # Coordinate any bump with the trainer's mlflow client pin in pyproject.toml.
   MLFLOW_BACKEND_STORE_URI: "sqlite:////mlflow/db/mlflow.db"
   MLFLOW_ARTIFACTS_DESTINATION: "s3://mlflow-artifacts/"
   MLFLOW_S3_ENDPOINT_URL: "http://minio.nebulift-platform.svc.cluster.local:9000"
   MLFLOW_HOST: "0.0.0.0"
   MLFLOW_PORT: "5000"
-  # Pin the MLflow version installed at pod startup. Bump deliberately and
-  # verify the trainer's mlflow client version matches in Phase 1b.
-  MLFLOW_VERSION: "2.20.0"

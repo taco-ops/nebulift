@@ -23,7 +23,7 @@ Out of scope (Phase 1b or later):
 - Any change to the training image or `nebulift.distributed.k8s_trainer` entrypoint.
 - Authentication or TLS termination at the Gateway. The Gateway listens on HTTP/80 only and trusts the LAN. Cert-manager + HTTPS is a separate phase.
 - Backups, HA, multi-tenant access policies, or quota enforcement on MinIO.
-- A custom GHCR-published MLflow image. Phase 1a installs MLflow via inline `pip install` in `python:3.11-slim`; a baked image is deferred to Phase 1b.
+- A custom GHCR-published MLflow image. Phase 1a installed MLflow via inline `pip install` in `python:3.11-slim`; the baked image shipped in Phase 1b-2. See `docs/PHASE_1B_PLATFORM.md`.
 
 ## Components
 
@@ -40,7 +40,7 @@ These are intentionally kept out of GitOps because the nebulift AppProject is no
 - `namespace.yaml` — `nebulift-platform` namespace with Pod Security Admission labels (`enforce: baseline`, `warn: restricted`).
 - `gateway.yaml` — `nebulift-platform-gateway` Gateway, gatewayClassName `traefik`, single HTTP listener on port 80 with hostname `*.nebulift.local`.
 - `minio/` — Deployment (sync-wave `"1"`, `Recreate`, ARM64 affinity, NFS volume), Service (ports `s3:9000`, `console:9001`), placeholder SealedSecret (`minio-root` with keys `accesskey`/`secretkey`), two HTTPRoutes (`minio.nebulift.local` → console, `s3.nebulift.local` → S3 API), and a bucket-bootstrap Job (sync-wave `"2"`, `argocd.argoproj.io/hook: Sync`, `hook-delete-policy: BeforeHookCreation`) that creates the `mlflow-artifacts` bucket.
-- `mlflow/` — ConfigMap (sqlite URI, S3 endpoint, MLflow version pin), Service (`http:5000`), Deployment (sync-wave `"3"`, ARM64 affinity, NFS volume for the SQLite database, inline `pip install mlflow==2.20.0 boto3`), and an HTTPRoute (`mlflow.nebulift.local`).
+- `mlflow/` — ConfigMap (sqlite URI, S3 endpoint), Service (`http:5000`), Deployment (sync-wave `"3"`, ARM64 affinity, NFS volume for the SQLite database, inline `pip install mlflow==2.20.0 boto3` on container start as originally shipped; replaced by the baked GHCR image in Phase 1b-2), and an HTTPRoute (`mlflow.nebulift.local`).
 - `kustomization.yaml` — top-level base that aggregates all of the above. Uses the modern `labels` field with `includeSelectors: false` so the `app.kubernetes.io/part-of=nebulift` and `app.kubernetes.io/managed-by=argocd` labels are applied to every resource without polluting Deployment selectors. The `nebulift.io/phase: "1a"` common annotation marks every resource for easy identification.
 
 ### GitOps resources
@@ -194,11 +194,11 @@ The `minio-bucket-bootstrap` Job re-runs on the next sync because of the `argocd
 
 - **MinIO on NFS is suboptimal.** NFS does not provide the POSIX semantics MinIO recommends. For a homelab this is acceptable, but expect slower performance and the small risk of corruption under concurrent writes. If problems appear, the documented fallback is `hostPath` + `nodeAffinity` pinning MinIO to a single node.
 - **SQLite-on-NFS is single-writer.** The MLflow Deployment uses `replicas: 1` and `strategy: Recreate` to enforce this. Do not scale MLflow up.
-- **Inline `pip install` on container start** means MLflow pulls dependencies from PyPI every pod start. This is fine for a stable single-replica deployment but is replaced in Phase 1b with a baked GHCR image.
+- **Inline `pip install` on container start** was the original Phase 1a deployment shape; it added ~30s of cold-start latency and made the platform PyPI-dependent. Phase 1b-2 replaced it with a baked GHCR image (`ghcr.io/taco-ops/nebulift-mlflow`); see `docs/PHASE_1B_PLATFORM.md`.
 - **No HTTPS.** The Gateway listens on HTTP/80 only. Cert-manager + an HTTPS listener is a separate phase.
 - **No authentication on MLflow.** MLflow has no built-in authentication. Anyone on the LAN who can reach `mlflow.nebulift.local` can write to it. This matches the trust model of the homelab; it must be revisited before any external exposure.
 - **Backups.** NFS snapshots are the only safety net. Add `restic` or similar before relying on MLflow run history.
-- **Trainer integration shipped in Phase 1b-1.** `K8sDistributedTrainer` now logs params, per-epoch metrics, and the final checkpoint to MLflow from rank 0; see `docs/PHASE_1B_TRAINER.md`. Baking a GHCR-published MLflow server image is still deferred (Phase 1b-2).
+- **Trainer integration shipped in Phase 1b-1.** `K8sDistributedTrainer` now logs params, per-epoch metrics, and the final checkpoint to MLflow from rank 0; see `docs/PHASE_1B_TRAINER.md`. The MLflow server itself was reshipped as a baked GHCR image in Phase 1b-2; see `docs/PHASE_1B_PLATFORM.md`.
 
 ## Pointers
 
