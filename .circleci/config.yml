@@ -189,9 +189,12 @@ jobs:
           name: Build and push multi-arch image
           command: |
             set -euo pipefail
-            IMAGE="ghcr.io/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}"
+            # OCI repository names must be lowercase; CircleCI preserves the
+            # GitHub display case (e.g. "Taco-Ops/Nebulift").
+            IMAGE_PATH=$(echo "${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}" | tr '[:upper:]' '[:lower:]')
+            IMAGE="ghcr.io/${IMAGE_PATH}"
             SHORT_SHA="${CIRCLE_SHA1:0:7}"
-            BRANCH_TAG="${CIRCLE_BRANCH//\//-}"
+            BRANCH_TAG=$(echo "${CIRCLE_BRANCH//\//-}" | tr '[:upper:]' '[:lower:]')
             TAG_ARGS=(--tag "${IMAGE}:${SHORT_SHA}" --tag "${IMAGE}:${BRANCH_TAG}")
             if [ "$CIRCLE_BRANCH" = "main" ]; then
               TAG_ARGS+=(--tag "${IMAGE}:latest")
