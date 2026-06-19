@@ -7,7 +7,7 @@ Raspberry Pi 5 nodes in a Kubernetes cluster using CPU-only PyTorch.
 
 import logging
 import os
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -121,12 +121,18 @@ class K8sDistributedTrainer(ModelTrainer):
             )
             logger.info("Model wrapped with DistributedDataParallel")
 
-    def train_epoch(self, train_loader: DataLoader) -> Tuple[float, float]:
+    def train_epoch(
+        self,
+        train_loader: DataLoader,
+        batch_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> Tuple[float, float]:
         """
         Train for one epoch with distributed coordination.
 
         Args:
             train_loader: DataLoader with DistributedSampler
+            batch_callback: Optional callback invoked after each batch with the
+                current batch index (1-based) and total batch count.
 
         Returns:
             Tuple of (average_loss, accuracy)
@@ -135,7 +141,7 @@ class K8sDistributedTrainer(ModelTrainer):
         if hasattr(train_loader.sampler, "set_epoch"):
             train_loader.sampler.set_epoch(len(self.train_losses))
 
-        return super().train_epoch(train_loader)
+        return super().train_epoch(train_loader, batch_callback=batch_callback)
 
     def cleanup(self) -> None:
         """Clean up distributed training resources."""

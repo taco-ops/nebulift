@@ -6,7 +6,7 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, TypeVar
 
 from tqdm import tqdm
 
@@ -97,11 +97,14 @@ def _count_batch_files(input_dir: Path) -> int:
     )
 
 
+T = TypeVar("T")
+
+
 def _run_with_progress(
     total: int,
     description: str,
-    operation: Callable[[Callable[[int, int, str], None]], object],
-):
+    operation: Callable[[Callable[[int, int, str], None]], T],
+) -> T:
     """Run an operation while rendering a CLI progress bar."""
     if not sys.stderr.isatty():
 
@@ -386,7 +389,9 @@ def main() -> None:
         elif args.command == "batch":
             total_files = _count_batch_files(args.input_dir)
 
-            def run_batch(progress_callback=None):
+            def run_batch(
+                progress_callback: Optional[Callable[[int, int, str], None]] = None,
+            ) -> Path:
                 return batch_process(
                     args.input_dir,
                     args.output_dir,
