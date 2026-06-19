@@ -25,6 +25,7 @@ from ..ml_model import (
     create_data_transforms,
 )
 from ..training import collect_class_directory_records
+from .mlflow_tracker import tracker_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -424,10 +425,44 @@ def main() -> None:
         )
 
         try:
-            trainer.train(train_loader, val_loader, epochs=epochs)
-            if trainer.is_main_process():
-                _save_unwrapped_checkpoint(trainer, model_output_path)
-                logger.info("Checkpoint persisted to %s", model_output_path)
+            # MLflow tracker is rank-aware: non-zero ranks get a no-op
+            # tracker from the factory, so this with-block is safe to
+            # share across all ranks without duplicate runs being created.
+            with tracker_from_env(rank=rank) as tracker:
+                if tracker.enabled:
+                    tracker.log_params(
+                        {
+                            "epochs": epochs,
+                            "batch_size": batch_size,
+                            "learning_rate": learning_rate,
+                            "world_size": world_size,
+                            "num_workers": num_workers,
+                            "backend": os.environ.get("BACKEND", "gloo"),
+                            "num_classes": len(LABEL_IDS),
+                            "train_records": len(train_records),
+                            "val_records": len(val_records),
+                            "model_output_path": str(model_output_path),
+                        },
+                    )
+
+                def _on_epoch(epoch_num: int, metrics: dict[str, float]) -> None:
+                    # Only rank 0 has an active run; tracker.log_metrics
+                    # is a no-op on others, but we still guard with the
+                    # is_main_process check to skip the dict construction
+                    # entirely on worker ranks.
+                    if trainer.is_main_process():
+                        tracker.log_metrics(metrics, step=epoch_num)
+
+                trainer.train(
+                    train_loader,
+                    val_loader,
+                    epochs=epochs,
+                    epoch_callback=_on_epoch,
+                )
+                if trainer.is_main_process():
+                    _save_unwrapped_checkpoint(trainer, model_output_path)
+                    logger.info("Checkpoint persisted to %s", model_output_path)
+                    tracker.log_artifact(model_output_path, artifact_path="model")
         finally:
             trainer.cleanup()
 

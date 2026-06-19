@@ -19,8 +19,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY nebulift/ ./nebulift/
 
-# Install dependencies with CPU-only PyTorch to reduce image size from 16GB to ~2GB
-RUN uv sync --frozen --no-dev --extra-index-url https://download.pytorch.org/whl/cpu
+# Install dependencies with CPU-only PyTorch to reduce image size from 16GB to ~2GB.
+# Include the `tracking` extra so the in-cluster trainer can talk to MLflow
+# without re-baking the image for every experiment-tracking change.
+RUN uv sync --frozen --no-dev --extra tracking --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Create non-root user for security
 RUN useradd -m -u 1000 nebulift && chown -R nebulift:nebulift /app
