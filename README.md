@@ -297,13 +297,16 @@ The full FITS training pipeline smoke test is available through the manual `run-
 
 ## Deployment Resources
 
-The repository includes Kubernetes and Argo CD resources for future distributed training workflows:
+The repository includes Kubernetes and Argo CD resources for distributed training workflows and the MLOps platform:
 
-- `k8s/`: base manifests and Kustomize overlays
-- `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources
+- `k8s/`: training Job base manifests and Kustomize overlays
+- `k8s/platform/`: Phase 1a MLOps platform (MinIO object store, MLflow tracking server, Gateway API HTTPRoutes); see `docs/PHASE_1A_PLATFORM.md`
+- `cluster-bootstrap/`: one-time cluster prerequisites (Gateway API CRDs, Traefik Gateway provider); see `cluster-bootstrap/README.md`
+- `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources, including the standalone `nebulift-platform` Application
+- `scripts/seal-minio-secret.sh`: kubeseal helper that rotates the MinIO root credential SealedSecret committed to the platform overlay
 - `nebulift/distributed/`: PyTorch distributed training utilities
 
-These resources are useful for infrastructure iteration, but the local training pipeline is the primary supported path today.
+The training overlays are useful for infrastructure iteration, but the local training pipeline is the primary supported path today. The Phase 1a platform is a prerequisite for Phase 1b, which will add MLflow tracking to the distributed trainer.
 
 ### GitOps and Kubernetes Training Flow
 
