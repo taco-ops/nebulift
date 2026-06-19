@@ -20,6 +20,6 @@ commonLabels:
 commonAnnotations:
   app.kubernetes.io/version: "latest"
 
-images:
-  - name: ghcr.io/taco-ops/nebulift
-    newTag: latest
+# Image tag is intentionally not pinned in base. Each overlay must declare an
+# `images:` block to pin the appropriate per-environment tag (e.g. branch name,
+# release tag, or immutable SHA). See k8s/overlays/{development,production}.

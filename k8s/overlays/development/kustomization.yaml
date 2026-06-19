@@ -21,7 +21,7 @@ commonAnnotations:
 
 images:
   - name: ghcr.io/taco-ops/nebulift
-    newTag: latest  # Use latest tag available in registry
+    newTag: develop  # CircleCI pushes :develop on every develop-branch build
 
 patchesStrategicMerge:
   - training-job-patch.yaml
