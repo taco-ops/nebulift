@@ -6,7 +6,9 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, TypeVar
+
+from tqdm import tqdm
 
 from . import manifest as _manifest
 from . import registry as _registry
@@ -82,6 +84,69 @@ def validate_system() -> None:
     except Exception as e:
         print(f"Error running validation: {e}")
         sys.exit(1)
+
+
+def _count_batch_files(input_dir: Path) -> int:
+    """Count FITS files that will be included in batch processing."""
+    return len(
+        sorted(
+            list(input_dir.glob("*.fits"))
+            + list(input_dir.glob("*.fit"))
+            + list(input_dir.glob("*.fts")),
+        ),
+    )
+
+
+T = TypeVar("T")
+
+
+def _run_with_progress(
+    total: int,
+    description: str,
+    operation: Callable[[Callable[[int, int, str], None]], T],
+) -> T:
+    """Run an operation while rendering a CLI progress bar."""
+    if not sys.stderr.isatty():
+
+        def callback(step: int, callback_total: int, message: str) -> None:
+            return None
+
+        return operation(callback)
+
+    last_step = 0
+
+    with tqdm(
+        total=total,
+        desc=f"{description}:",
+        unit="step",
+        leave=False,
+        ncols=80,
+        dynamic_ncols=False,
+        bar_format="{desc} {n_fmt}/{total_fmt} [{bar:20}]",
+    ) as progress:
+
+        def callback(step: int, callback_total: int, message: str) -> None:
+            nonlocal last_step
+
+            if callback_total != progress.total:
+                progress.total = callback_total
+
+            increment = max(0, step - last_step)
+            if increment:
+                progress.update(increment)
+                last_step = step
+
+            if message:
+                progress.set_description_str(
+                    f"{description}: {message[:32]}",
+                    refresh=False,
+                )
+
+        result = operation(callback)
+        if progress.total is not None and last_step < progress.total:
+            progress.update(progress.total - last_step)
+
+    return result
 
 
 def main() -> None:
@@ -290,15 +355,20 @@ def main() -> None:
 
     try:
         if args.command == "analyze":
-            result = analyze_single_file(
-                args.fits_file,
-                model_path=args.model,
-                registry_path=args.registry,
-                settings_path=args.settings,
-                use_default_model=not args.no_default_model,
-                use_default_thresholds=not args.no_default_thresholds,
-                clean_threshold=args.clean_threshold,
-                contaminated_threshold=args.contaminated_threshold,
+            result = _run_with_progress(
+                4,
+                "Analyze",
+                lambda progress_callback: analyze_single_file(
+                    args.fits_file,
+                    model_path=args.model,
+                    registry_path=args.registry,
+                    settings_path=args.settings,
+                    use_default_model=not args.no_default_model,
+                    use_default_thresholds=not args.no_default_thresholds,
+                    clean_threshold=args.clean_threshold,
+                    contaminated_threshold=args.contaminated_threshold,
+                    progress_callback=progress_callback,
+                ),
             )
             if "error" in result:
                 print(f"Error: {result['error']}")
@@ -317,45 +387,71 @@ def main() -> None:
                 "Contaminated Threshold: " f"{result['thresholds']['contaminated']:.3f}"
             )
         elif args.command == "batch":
-            batch_process(
-                args.input_dir,
-                args.output_dir,
-                action=args.action,
-                model_path=args.model,
-                registry_path=args.registry,
-                settings_path=args.settings,
-                use_default_model=not args.no_default_model,
-                manifest_name=args.manifest,
-                use_default_thresholds=not args.no_default_thresholds,
-                clean_threshold=args.clean_threshold,
-                contaminated_threshold=args.contaminated_threshold,
-            )
+            total_files = _count_batch_files(args.input_dir)
+
+            def run_batch(
+                progress_callback: Optional[Callable[[int, int, str], None]] = None,
+            ) -> Path:
+                return batch_process(
+                    args.input_dir,
+                    args.output_dir,
+                    action=args.action,
+                    model_path=args.model,
+                    registry_path=args.registry,
+                    settings_path=args.settings,
+                    use_default_model=not args.no_default_model,
+                    manifest_name=args.manifest,
+                    use_default_thresholds=not args.no_default_thresholds,
+                    clean_threshold=args.clean_threshold,
+                    contaminated_threshold=args.contaminated_threshold,
+                    progress_callback=progress_callback,
+                )
+
+            if total_files:
+                _run_with_progress(total_files * 2, "Batch", run_batch)
+            else:
+                run_batch()
         elif args.command == "train":
-            train_model(
-                args.data_dir,
-                args.model_output,
+            _run_with_progress(
                 args.epochs,
-                args.batch_size,
-                args.train_split,
+                "Train",
+                lambda progress_callback: train_model(
+                    args.data_dir,
+                    args.model_output,
+                    args.epochs,
+                    args.batch_size,
+                    args.train_split,
+                    progress_callback=progress_callback,
+                ),
             )
         elif args.command == "train-from-fits":
-            train_from_fits(
-                args.fits_dir,
-                args.model_output,
-                args.dataset_dir,
+            _run_with_progress(
                 args.epochs,
-                args.batch_size,
-                args.clean_threshold,
-                args.contaminated_threshold,
+                "Train",
+                lambda progress_callback: train_from_fits(
+                    args.fits_dir,
+                    args.model_output,
+                    args.dataset_dir,
+                    args.epochs,
+                    args.batch_size,
+                    args.clean_threshold,
+                    args.contaminated_threshold,
+                    progress_callback=progress_callback,
+                ),
             )
         elif args.command == "train-from-manifest":
-            train_from_manifest(
-                args.manifest,
-                args.model_output,
-                args.dataset_dir,
+            _run_with_progress(
                 args.epochs,
-                args.batch_size,
-                args.reviewed_only,
+                "Train",
+                lambda progress_callback: train_from_manifest(
+                    args.manifest,
+                    args.model_output,
+                    args.dataset_dir,
+                    args.epochs,
+                    args.batch_size,
+                    args.reviewed_only,
+                    progress_callback=progress_callback,
+                ),
             )
         elif args.command == "k8s-train":
             launch_k8s_training(args.config)

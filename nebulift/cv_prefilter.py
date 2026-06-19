@@ -7,7 +7,7 @@ common artifacts in astronomical images before ML processing.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -349,6 +349,7 @@ def batch_analyze_images(
     image_paths: list[str],
     detector: Optional[ArtifactDetector] = None,
     fits_processor: Optional["FITSProcessor"] = None,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> dict[str, dict[str, Any]]:
     """
     Analyze a batch of images for artifacts and quality.
@@ -357,6 +358,8 @@ def batch_analyze_images(
         image_paths: List of paths to image files (supports FITS and standard formats)
         detector: Optional pre-configured detector instance
         fits_processor: Optional FITSProcessor for FITS files
+        progress_callback: Optional callback receiving current index, total file
+            count, and the image path after each file is attempted
 
     Returns:
         Dictionary mapping file paths to analysis results
@@ -371,8 +374,9 @@ def batch_analyze_images(
         fits_processor = FITSProcessor()
 
     results = {}
+    total_images = len(image_paths)
 
-    for image_path in image_paths:
+    for index, image_path in enumerate(image_paths, start=1):
         try:
             # Check if this is a FITS file
             path_obj = Path(image_path)
@@ -403,6 +407,9 @@ def batch_analyze_images(
 
         except Exception as e:
             logger.error(f"Error analyzing {image_path}: {e}")
+        finally:
+            if progress_callback is not None:
+                progress_callback(index, total_images, image_path)
 
     return results
 

@@ -6,7 +6,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .cv_prefilter import ArtifactDetector, batch_analyze_images
 from .fits_processor import FITSProcessor
@@ -19,6 +19,9 @@ from .registry import (
 )
 
 VALID_LABELS = {"clean", "contaminated", "review"}
+
+
+ProgressCallback = Callable[[int, int, str], None]
 
 
 def classify_cv_score(
@@ -45,8 +48,15 @@ def analyze_single_file(
     use_default_thresholds: bool = True,
     clean_threshold: Optional[float] = None,
     contaminated_threshold: Optional[float] = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> dict[str, Any]:
     """Analyze a single FITS file for quality."""
+
+    def report_progress(step: int, total: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(step, total, message)
+
+    report_progress(0, 4, "prepare")
     processor = FITSProcessor()
     detector = ArtifactDetector()
     resolved_clean_threshold, resolved_contaminated_threshold = resolve_thresholds(
@@ -56,10 +66,12 @@ def analyze_single_file(
         use_default_thresholds=use_default_thresholds,
     )
 
+    report_progress(1, 4, "load")
     fits_data = processor.load_fits_file(fits_path)
     if not fits_data:
         return {"error": f"Failed to load FITS file: {fits_path}"}
 
+    report_progress(2, 4, "cv")
     normalized = processor.normalize_image(fits_data["image_data"])
     analysis = detector.comprehensive_analysis(normalized)
     quality_score = float(analysis["overall_quality_score"])
@@ -74,11 +86,16 @@ def analyze_single_file(
     decision_source = "cv"
     active_model_path = resolve_model_path(model_path, registry_path, use_default_model)
     if active_model_path is not None:
+        report_progress(3, 4, "infer")
         predictor = QualityPredictor(str(active_model_path))
         ml_prediction = predictor.predict_single(str(fits_path), processor)
         if "error" not in ml_prediction:
             decision_label = str(ml_prediction["predicted_label"])
             decision_source = "ml"
+    else:
+        report_progress(3, 4, "skip infer")
+
+    report_progress(4, 4, "finalize")
 
     return {
         "file": str(fits_path),
@@ -155,6 +172,7 @@ def batch_process(
     use_default_thresholds: bool = True,
     clean_threshold: Optional[float] = None,
     contaminated_threshold: Optional[float] = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Path:
     """Batch process FITS files and write a JSON manifest."""
     if action not in {"report", "move"}:
@@ -206,12 +224,35 @@ def batch_process(
         )
         return manifest_path
 
-    print(f"Processing {len(fits_files)} FITS files...")
-    results = batch_analyze_images([str(f) for f in fits_files], detector, processor)
+    total_steps = len(fits_files) * 2
+    if progress_callback is not None:
+        progress_callback(0, total_steps, "scan")
+
+    def analysis_progress(current: int, _total: int, image_path: str) -> None:
+        if progress_callback is not None:
+            progress_callback(
+                current,
+                total_steps,
+                Path(image_path).name,
+            )
+
+    results = batch_analyze_images(
+        [str(f) for f in fits_files],
+        detector,
+        processor,
+        progress_callback=analysis_progress,
+    )
     predictor = QualityPredictor(str(active_model_path)) if active_model_path else None
     entries = []
 
-    for fits_path in fits_files:
+    for index, fits_path in enumerate(fits_files, start=1):
+        if progress_callback is not None:
+            progress_callback(
+                len(fits_files) + index,
+                total_steps,
+                fits_path.name,
+            )
+
         analysis = results.get(str(fits_path))
         if analysis is None:
             entries.append(
