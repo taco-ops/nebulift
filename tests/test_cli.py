@@ -5,7 +5,11 @@ import subprocess
 import sys
 from unittest.mock import patch
 
+import pytest
+
+import nebulift.cli as cli_module
 from nebulift.manifest import (
+    analyze_single_file,
     batch_process,
     calibrate_thresholds,
     classify_cv_score,
@@ -26,7 +30,7 @@ from nebulift.registry import (
     resolve_model_path,
     resolve_thresholds,
 )
-from nebulift.training import train_from_manifest, train_model
+from nebulift.training import train_from_fits, train_from_manifest, train_model
 
 
 def _analysis(score: float) -> dict:
@@ -284,6 +288,125 @@ def test_batch_process_explicit_thresholds_override_promoted_defaults(tmp_path):
     manifest = json.loads(manifest_path.read_text())
     assert manifest["thresholds"] == {"clean": 0.8, "contaminated": 0.2}
     assert manifest["files"][0]["cv_label"] == "review"
+
+
+def test_analyze_single_file_reports_progress(tmp_path):
+    """Single-file analysis should emit stage progress updates."""
+    fits_file = tmp_path / "image.fits"
+    fits_file.write_text("placeholder")
+    progress_events = []
+
+    with (
+        patch("nebulift.manifest.FITSProcessor") as mock_processor_cls,
+        patch("nebulift.manifest.ArtifactDetector") as mock_detector_cls,
+        patch("nebulift.manifest.resolve_model_path", return_value=None),
+    ):
+        mock_processor = mock_processor_cls.return_value
+        mock_processor.load_fits_file.return_value = {"image_data": [[1.0]]}
+        mock_processor.normalize_image.return_value = [[1.0]]
+        mock_detector_cls.return_value.comprehensive_analysis.return_value = _analysis(
+            0.8
+        )
+
+        result = analyze_single_file(
+            fits_file,
+            progress_callback=lambda step, total, message: progress_events.append(
+                (step, total, message),
+            ),
+        )
+
+    assert result["decision_label"] == "clean"
+    assert progress_events == [
+        (0, 4, "prepare"),
+        (1, 4, "load"),
+        (2, 4, "cv"),
+        (3, 4, "skip infer"),
+        (4, 4, "finalize"),
+    ]
+
+
+def test_batch_process_reports_progress_for_analysis_and_classification(tmp_path):
+    """Batch processing should emit progress across both main phases."""
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    first_file = input_dir / "image1.fits"
+    second_file = input_dir / "image2.fits"
+    first_file.write_text("placeholder")
+    second_file.write_text("placeholder")
+    progress_events = []
+
+    def emit_batch_results(_paths, _detector, _processor, progress_callback=None):
+        assert progress_callback is not None
+        progress_callback(1, 2, str(first_file))
+        progress_callback(2, 2, str(second_file))
+        return {
+            str(first_file): _analysis(0.8),
+            str(second_file): _analysis(0.2),
+        }
+
+    with patch(
+        "nebulift.manifest.batch_analyze_images", side_effect=emit_batch_results
+    ):
+        manifest_path = batch_process(
+            input_dir,
+            output_dir,
+            progress_callback=lambda step, total, message: progress_events.append(
+                (step, total, message),
+            ),
+        )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["summary"] == {
+        "clean": 1,
+        "contaminated": 1,
+        "review": 0,
+        "errors": 0,
+    }
+    assert progress_events == [
+        (0, 4, "scan"),
+        (1, 4, "image1.fits"),
+        (2, 4, "image2.fits"),
+        (3, 4, "image1.fits"),
+        (4, 4, "image2.fits"),
+    ]
+
+
+def test_run_with_progress_uses_compact_tqdm_layout():
+    """CLI progress bars should use a compact fixed-width layout."""
+    tqdm_kwargs = {}
+    descriptions = []
+
+    class FakeTqdm:
+        def __init__(self, **kwargs):
+            tqdm_kwargs.update(kwargs)
+            self.total = kwargs["total"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, _increment):
+            return None
+
+        def set_description_str(self, message, refresh=False):
+            descriptions.append(message)
+
+    with (
+        patch("sys.stderr.isatty", return_value=True),
+        patch.object(cli_module, "tqdm", side_effect=FakeTqdm),
+    ):
+        cli_module._run_with_progress(
+            4, "Analyzing", lambda callback: callback(4, 4, "done")
+        )
+
+    assert tqdm_kwargs["ncols"] == 80
+    assert tqdm_kwargs["dynamic_ncols"] is False
+    assert tqdm_kwargs["bar_format"] == "{desc} {n_fmt}/{total_fmt} [{bar:20}]"
+    assert tqdm_kwargs["desc"] == "Analyzing:"
+    assert descriptions == ["Analyzing: done"]
 
 
 def test_review_manifest_records_corrected_label(tmp_path):
@@ -666,6 +789,7 @@ def test_train_from_manifest_calls_pipeline(tmp_path):
         epochs=2,
         batch_size=4,
         reviewed_only=True,
+        progress_callback=None,
     )
 
 
@@ -695,6 +819,173 @@ def test_train_model_uses_curated_class_folders(tmp_path):
     mock_trainer.return_value.save_model.assert_called_once_with(model_output)
     assert mock_dataset.call_count == 2
     assert mock_loader.call_count == 2
+
+
+def test_train_model_forwards_progress_callback(tmp_path):
+    """train_model should forward its progress callback to ModelTrainer.train."""
+    data_dir = tmp_path / "curated"
+    for label in ["clean", "contaminated", "review"]:
+        label_dir = data_dir / label
+        label_dir.mkdir(parents=True)
+        (label_dir / f"{label}.fits").write_text("placeholder")
+    model_output = tmp_path / "model.pth"
+    callback = lambda step, total, message: None  # noqa: E731
+
+    with (
+        patch("nebulift.training.AstroImageDataset") as mock_dataset,
+        patch("nebulift.training.DataLoader"),
+        patch("nebulift.training.AstroQualityClassifier"),
+        patch("nebulift.training.ModelTrainer") as mock_trainer,
+    ):
+        mock_dataset.side_effect = [
+            type("Dataset", (), {"__len__": lambda self: 2})(),
+            type("Dataset", (), {"__len__": lambda self: 1})(),
+        ]
+        train_model(
+            data_dir,
+            model_output,
+            epochs=2,
+            batch_size=2,
+            train_split=0.67,
+            progress_callback=callback,
+        )
+
+    train_call = mock_trainer.return_value.train.call_args
+    assert train_call.kwargs["progress_callback"] is callback
+    assert train_call.kwargs["epochs"] == 2
+
+
+def test_train_from_manifest_forwards_progress_callback(tmp_path):
+    """train_from_manifest should forward its progress callback to the pipeline."""
+    manifest_path = tmp_path / "batch_manifest.json"
+    model_path = tmp_path / "model.pth"
+    dataset_dir = tmp_path / "dataset"
+    manifest_path.write_text('{"files": []}')
+    callback = lambda step, total, message: None  # noqa: E731
+
+    with patch(
+        "nebulift.training.complete_training_pipeline_from_manifest",
+    ) as mock_train:
+        mock_train.return_value = {
+            "model_path": str(model_path),
+            "dataset_dir": str(dataset_dir),
+            "dataset_stats": {
+                "training_samples": 3,
+                "validation_samples": 1,
+                "reviewed_samples": 4,
+            },
+            "final_metrics": {"best_val_accuracy": 75.0},
+        }
+        train_from_manifest(
+            manifest_path,
+            model_path,
+            dataset_dir,
+            epochs=2,
+            batch_size=4,
+            reviewed_only=True,
+            progress_callback=callback,
+        )
+
+    assert mock_train.call_args.kwargs["progress_callback"] is callback
+
+
+def test_train_from_fits_forwards_progress_callback(tmp_path):
+    """train_from_fits should forward its progress callback to the pipeline."""
+    fits_dir = tmp_path / "fits"
+    fits_dir.mkdir()
+    model_path = tmp_path / "model.pth"
+    dataset_dir = tmp_path / "dataset"
+    callback = lambda step, total, message: None  # noqa: E731
+
+    with patch("nebulift.training.complete_training_pipeline") as mock_train:
+        mock_train.return_value = {
+            "model_path": str(model_path),
+            "dataset_dir": str(dataset_dir),
+            "dataset_stats": {
+                "training_samples": 3,
+                "validation_samples": 1,
+                "review_samples": 0,
+            },
+            "final_metrics": {"best_val_accuracy": 80.0},
+        }
+        train_from_fits(
+            fits_dir,
+            model_path,
+            dataset_dir,
+            epochs=3,
+            batch_size=4,
+            clean_threshold=0.7,
+            contaminated_threshold=0.3,
+            progress_callback=callback,
+        )
+
+    assert mock_train.call_args.kwargs["progress_callback"] is callback
+
+
+# PyTorch logs a UserWarning when lr_scheduler.step() runs before
+# optimizer.step(). Our stubs intentionally skip optimizer.step() to keep the
+# test focused on the progress orchestration, so we silence that specific warning.
+@pytest.mark.filterwarnings("ignore:Detected call of:UserWarning")
+def test_model_trainer_emits_per_batch_progress():
+    """ModelTrainer.train should emit per-batch progress with epoch-aware messages."""
+    from torch import nn
+
+    from nebulift.ml_model import ModelTrainer
+
+    class _StubModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(1, 1)
+
+    class _StubLoader:
+        def __init__(self, length: int) -> None:
+            self._length = length
+
+        def __len__(self) -> int:
+            return self._length
+
+    trainer = ModelTrainer(_StubModel())
+    train_loader = _StubLoader(3)
+    val_loader = _StubLoader(2)
+
+    def fake_train_epoch(_loader, batch_callback=None):
+        if batch_callback is not None:
+            for batch_idx in range(len(_loader)):
+                batch_callback(batch_idx + 1, len(_loader))
+        return 0.1, 90.0
+
+    def fake_evaluate(_loader, batch_callback=None):
+        if batch_callback is not None:
+            for batch_idx in range(len(_loader)):
+                batch_callback(batch_idx + 1, len(_loader))
+        return 0.2, 80.0
+
+    trainer.train_epoch = fake_train_epoch
+    trainer.evaluate = fake_evaluate
+
+    events = []
+    trainer.train(
+        train_loader,
+        val_loader,
+        epochs=2,
+        progress_callback=lambda step, total, message: events.append(
+            (step, total, message),
+        ),
+    )
+
+    assert events == [
+        (0, 10, "start"),
+        (1, 10, "e1/2 train"),
+        (2, 10, "e1/2 train"),
+        (3, 10, "e1/2 train"),
+        (4, 10, "e1/2 val"),
+        (5, 10, "e1/2 val"),
+        (6, 10, "e2/2 train"),
+        (7, 10, "e2/2 train"),
+        (8, 10, "e2/2 train"),
+        (9, 10, "e2/2 val"),
+        (10, 10, "e2/2 val"),
+    ]
 
 
 def test_register_promote_and_resolve_model(tmp_path):

@@ -11,7 +11,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -35,6 +35,10 @@ LABEL_NAMES = {
     LABEL_REVIEW: "review",
 }
 LABEL_IDS = {label_name: label_id for label_id, label_name in LABEL_NAMES.items()}
+
+
+ProgressCallback = Callable[[int, int, str], None]
+BatchCallback = Callable[[int, int], None]
 
 
 class AstroImageDataset(Dataset):
@@ -212,12 +216,17 @@ class ModelTrainer:
         self.train_accuracies: list[float] = []
         self.val_accuracies: list[float] = []
 
-    def train_epoch(self, train_loader: DataLoader) -> tuple[float, float]:
+    def train_epoch(
+        self,
+        train_loader: DataLoader,
+        batch_callback: Optional[BatchCallback] = None,
+    ) -> tuple[float, float]:
         """Train for one epoch."""
         self.model.train()
         total_loss = 0.0
         correct = 0
         total = 0
+        batch_total = len(train_loader)
 
         for batch_idx, (data, target) in enumerate(train_loader):
             data, target = data.to(self.device), target.to(self.device)
@@ -242,20 +251,28 @@ class ModelTrainer:
             if batch_idx % 10 == 0:
                 logger.info(f"Train Batch: {batch_idx}, Loss: {loss.item():.6f}")
 
+            if batch_callback is not None:
+                batch_callback(batch_idx + 1, batch_total)
+
         avg_loss = total_loss / len(train_loader)
         accuracy = 100.0 * correct / total
 
         return avg_loss, accuracy
 
-    def evaluate(self, val_loader: DataLoader) -> tuple[float, float]:
+    def evaluate(
+        self,
+        val_loader: DataLoader,
+        batch_callback: Optional[BatchCallback] = None,
+    ) -> tuple[float, float]:
         """Evaluate the model on validation data."""
         self.model.eval()
         total_loss = 0.0
         correct = 0
         total = 0
+        batch_total = len(val_loader)
 
         with torch.no_grad():
-            for data, target in val_loader:
+            for batch_idx, (data, target) in enumerate(val_loader):
                 data, target = data.to(self.device), target.to(self.device)
 
                 output = self.model(data)
@@ -265,6 +282,9 @@ class ModelTrainer:
                 _, predicted = torch.max(output.data, 1)
                 total += target.size(0)
                 correct += (predicted == target).sum().item()
+
+                if batch_callback is not None:
+                    batch_callback(batch_idx + 1, batch_total)
 
         avg_loss = total_loss / len(val_loader)
         accuracy = 100.0 * correct / total
@@ -277,6 +297,7 @@ class ModelTrainer:
         val_loader: DataLoader,
         epochs: int = 20,
         save_path: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> dict[str, list[float]]:
         """
         Train the model for multiple epochs.
@@ -286,20 +307,51 @@ class ModelTrainer:
             val_loader: Validation data loader
             epochs: Number of epochs to train
             save_path: Path to save the best model
+            progress_callback: Optional callback receiving current step, total
+                step count (``epochs * (train_batches + val_batches)``), and a
+                short message such as ``"e3/50 train"`` after each batch.
 
         Returns:
             Dictionary containing training history
         """
         best_val_accuracy = 0.0
+        train_batches = len(train_loader)
+        val_batches = len(val_loader)
+        total_steps = epochs * (train_batches + val_batches)
+        steps_done = 0
+        current_epoch = 0
+
+        def emit(message: str) -> None:
+            if progress_callback is not None:
+                progress_callback(steps_done, total_steps, message)
+
+        def on_train_batch(_batch_idx: int, _batch_total: int) -> None:
+            nonlocal steps_done
+            steps_done += 1
+            emit(f"e{current_epoch + 1}/{epochs} train")
+
+        def on_val_batch(_batch_idx: int, _batch_total: int) -> None:
+            nonlocal steps_done
+            steps_done += 1
+            emit(f"e{current_epoch + 1}/{epochs} val")
+
+        emit("start")
 
         for epoch in range(epochs):
+            current_epoch = epoch
             logger.info(f"Epoch {epoch+1}/{epochs}")
 
             # Train
-            train_loss, train_acc = self.train_epoch(train_loader)
+            train_loss, train_acc = self.train_epoch(
+                train_loader,
+                batch_callback=on_train_batch,
+            )
 
             # Validate
-            val_loss, val_acc = self.evaluate(val_loader)
+            val_loss, val_acc = self.evaluate(
+                val_loader,
+                batch_callback=on_val_batch,
+            )
 
             # Update learning rate
             self.scheduler.step()
@@ -906,6 +958,7 @@ def complete_training_pipeline(
     train_split: float = 0.8,
     device: Optional[str] = None,
     pretrained: bool = False,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> dict[str, Any]:
     """Run FITS discovery, CV labeling, dataset creation, and model training."""
     if epochs < 1:
@@ -943,7 +996,12 @@ def complete_training_pipeline(
 
     model = AstroQualityClassifier(num_classes=3, pretrained=pretrained)
     trainer = ModelTrainer(model, device=device)
-    history = trainer.train(train_loader, val_loader, epochs=epochs)
+    history = trainer.train(
+        train_loader,
+        val_loader,
+        epochs=epochs,
+        progress_callback=progress_callback,
+    )
     trainer.save_model(model_output_path)
 
     label_counts = {
@@ -985,6 +1043,7 @@ def complete_training_pipeline_from_manifest(
     reviewed_only: bool = False,
     device: Optional[str] = None,
     pretrained: bool = False,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> dict[str, Any]:
     """Train a three-class model from labels in a JSON batch manifest."""
     if epochs < 1:
@@ -1016,7 +1075,12 @@ def complete_training_pipeline_from_manifest(
 
     model = AstroQualityClassifier(num_classes=3, pretrained=pretrained)
     trainer = ModelTrainer(model, device=device)
-    history = trainer.train(train_loader, val_loader, epochs=epochs)
+    history = trainer.train(
+        train_loader,
+        val_loader,
+        epochs=epochs,
+        progress_callback=progress_callback,
+    )
     trainer.save_model(model_output_path)
 
     all_labels = train_dataset.labels + val_dataset.labels
