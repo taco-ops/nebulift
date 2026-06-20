@@ -300,13 +300,14 @@ The full FITS training pipeline smoke test is available through the manual `run-
 The repository includes Kubernetes and Argo CD resources for distributed training workflows and the MLOps platform:
 
 - `k8s/`: training Job base manifests and Kustomize overlays
-- `k8s/platform/`: Phase 1a MLOps platform (MinIO object store, MLflow tracking server, Gateway API HTTPRoutes); see `docs/PHASE_1A_PLATFORM.md`
+- `k8s/platform/`: Phase 1a MLOps platform (MinIO object store, MLflow tracking server, Gateway API HTTPRoutes); MLflow now runs the baked Phase 1b-2 image. See `docs/PHASE_1A_PLATFORM.md` and `docs/PHASE_1B_PLATFORM.md`
 - `cluster-bootstrap/`: one-time cluster prerequisites (Gateway API CRDs, Traefik Gateway provider); see `cluster-bootstrap/README.md`
 - `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources, including the standalone `nebulift-platform` Application
 - `scripts/seal-minio-secret.sh`: kubeseal helper that rotates the MinIO root credential SealedSecret committed to the platform overlay
+- `docker/mlflow/`: Dockerfile for the baked MLflow tracking server image (`ghcr.io/taco-ops/nebulift-mlflow`) consumed by the platform Deployment; see `docs/PHASE_1B_PLATFORM.md`
 - `nebulift/distributed/`: PyTorch distributed training utilities, including the MLflow tracker introduced in Phase 1b-1 (see `docs/PHASE_1B_TRAINER.md`)
 
-The training overlays are useful for infrastructure iteration, but the local training pipeline is the primary supported path today. Phase 1b-1 has shipped: the distributed trainer logs experiments to the Phase 1a MLflow server when `MLFLOW_TRACKING_URI` is set, and falls back to a no-op tracker otherwise.
+The training overlays are useful for infrastructure iteration, but the local training pipeline is the primary supported path today. Phase 1b-1 has shipped: the distributed trainer logs experiments to the platform MLflow server when `MLFLOW_TRACKING_URI` is set, and falls back to a no-op tracker otherwise. Phase 1b-2 has shipped: the MLflow server now runs from `ghcr.io/taco-ops/nebulift-mlflow` instead of installing MLflow at pod start.
 
 ### GitOps and Kubernetes Training Flow
 

@@ -1,15 +1,15 @@
 # MLflow tracking server.
 #
-# Why python:3.11-slim instead of the official ghcr.io/mlflow/mlflow image:
-#   The official MLflow image does NOT include boto3 by default, so S3-backed
-#   artifact storage (our MinIO setup) does not work out of the box. We could
-#   either:
-#     (a) layer boto3 via an initContainer + shared site-packages volume, or
-#     (b) build a custom multi-arch image with mlflow+boto3 baked in, or
-#     (c) install both at pod startup on top of python:3.11-slim.
-#   Option (c) is the simplest reliable cross-arch path for Phase 1a; it adds
-#   ~20-30s to pod startup (only on cold starts). Option (b) is the right
-#   long-term move and is a candidate for Phase 1b.
+# Phase 1b-2: switched from python:3.11-slim + runtime `pip install` to a
+# baked image at ghcr.io/taco-ops/nebulift-mlflow (built by the
+# image_build_mlflow CircleCI job from docker/mlflow/Dockerfile).
+# Benefits over the Phase 1a runtime-install shim:
+#   - Eliminates ~20-30s pod cold-start latency.
+#   - Removes the PyPI runtime dependency (no install on every restart).
+#   - Allows readOnlyRootFilesystem: true since no package writes are needed.
+#   - Pins mlflow + boto3 deterministically in the image.
+# The image still bundles boto3 because the upstream ghcr.io/mlflow/mlflow
+# image does not, and our MinIO-backed --serve-artifacts mode needs it.
 #
 # Storage:
 #   - SQLite metadata DB on NFS at /mlflow/db. Single-writer enforced by
@@ -63,22 +63,26 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mlflow
-          image: python:3.11-slim
-          imagePullPolicy: IfNotPresent
-          command: ["/bin/bash", "-c"]
+          # Baked image; rebuilt by CircleCI image_build_mlflow on every push
+          # to main and retagged as :latest. imagePullPolicy: Always picks up
+          # the new digest on every pod restart (Recreate strategy makes that
+          # the only refresh path for this single-replica Deployment).
+          image: ghcr.io/taco-ops/nebulift-mlflow:latest
+          imagePullPolicy: Always
+          # ENTRYPOINT in the image is `mlflow`, so args here are subcommand
+          # + flags only. $(VAR) syntax is expanded by kubelet from envFrom +
+          # env before exec, so the running process sees fully-resolved args.
           args:
-            - |
-              set -euo pipefail
-              pip install --quiet --no-cache-dir --user \
-                "mlflow==${MLFLOW_VERSION}" boto3
-              export PATH="${HOME}/.local/bin:${PATH}"
-              mkdir -p /mlflow/db
-              exec mlflow server \
-                --backend-store-uri "${MLFLOW_BACKEND_STORE_URI}" \
-                --artifacts-destination "${MLFLOW_ARTIFACTS_DESTINATION}" \
-                --serve-artifacts \
-                --host "${MLFLOW_HOST}" \
-                --port "${MLFLOW_PORT}"
+            - server
+            - --backend-store-uri
+            - $(MLFLOW_BACKEND_STORE_URI)
+            - --artifacts-destination
+            - $(MLFLOW_ARTIFACTS_DESTINATION)
+            - --serve-artifacts
+            - --host
+            - $(MLFLOW_HOST)
+            - --port
+            - $(MLFLOW_PORT)
           env:
             # AWS_* env vars are consumed by boto3 (which MLflow uses to talk
             # to MinIO's S3 API). The MinIO root credentials double as the S3
@@ -93,8 +97,6 @@ spec:
                 secretKeyRef:
                   name: minio-root
                   key: secretkey
-            - name: HOME
-              value: /tmp
           envFrom:
             - configMapRef:
                 name: mlflow-config
@@ -105,14 +107,17 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 45
+            # Cold start is now image pull + process start (no pip install),
+            # so the previous 45s grace can come down. Keep some headroom for
+            # ARM64 NFS mount + SQLite WAL recovery on first boot.
+            initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 90
+            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
           resources:
@@ -124,7 +129,10 @@ spec:
               cpu: 1
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            # Baked image means no runtime pip writes -> root FS can be RO.
+            # Writable paths needed at runtime: /mlflow/db (NFS) and /tmp
+            # (emptyDir) for SQLite WAL/journal scratch.
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:

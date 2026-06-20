@@ -33,11 +33,12 @@ In scope:
   per-overlay `MLFLOW_EXPERIMENT_NAME` in the dev and prod patches, and
   `POD_NAMESPACE` exposed via the downward API for run tagging.
 
-Out of scope (deferred to Phase 1b-2 or later):
+Out of scope (deferred to a later phase):
 
-- Baking a GHCR-published MLflow server image. The platform Deployment still
-  runs `pip install mlflow==2.20.0 boto3` on container start (Phase 1a
-  decision).
+- Baking a GHCR-published MLflow server image. **Shipped in Phase 1b-2**;
+  the platform Deployment now pulls `ghcr.io/taco-ops/nebulift-mlflow`
+  instead of installing MLflow at container start. See
+  `docs/PHASE_1B_PLATFORM.md`.
 - MLflow Model Registry usage. We log the checkpoint as a plain file artifact;
   promoting to a registered model is a Phase 3 (KServe) concern.
 - Argo Workflows driving the training Job. Phase 2.
@@ -199,8 +200,8 @@ A disabled tracker logs a single info line stating why
 
 ## Known Limitations and Open Work
 
-- **Inline `pip install` on the MLflow Deployment.** Phase 1a still installs
-  the server at container start. Deferred to Phase 1b-2 (baked GHCR image).
+- **MLflow server now baked.** Phase 1b-2 swapped the inline-pip Deployment
+  for the GHCR `nebulift-mlflow` image. See `docs/PHASE_1B_PLATFORM.md`.
 - **No automatic image / commit metadata.** `IMAGE_TAG` and `COMMIT_SHA`
   tags depend on an external tool (Argo CD Image Updater or a CI-driven
   overlay rewrite) and remain empty in the current manifests.
