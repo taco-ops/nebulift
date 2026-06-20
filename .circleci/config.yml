@@ -207,6 +207,73 @@ jobs:
               --push \
               .
 
+  image_build_mlflow:
+    # Builds the baked MLflow tracking server image consumed by the
+    # nebulift-platform Deployment (k8s/platform/base/mlflow). Independent of
+    # the trainer image build because the two share no source code and we
+    # want platform image rebuilds even when trainer tests are skipped.
+    machine:
+      image: ubuntu-2404:current
+      docker_layer_caching: true
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: Ensure Docker daemon is running
+          command: |
+            sudo systemctl enable --now docker.service 2>/dev/null || sudo service docker start || true
+            for i in $(seq 1 30); do
+              if docker info >/dev/null 2>&1; then
+                echo "Docker daemon ready after ${i}s"
+                docker version
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Docker daemon failed to start within 30s" >&2
+            sudo systemctl status docker.service --no-pager || true
+            exit 1
+      - run:
+          name: Set up QEMU for multi-arch emulation
+          command: docker run --privileged --rm tonistiigi/binfmt:latest --install all
+      - run:
+          name: Create buildx builder
+          command: |
+            docker buildx create --use --name nebulift-mlflow-builder --driver docker-container
+            docker buildx inspect --bootstrap
+      - run:
+          name: Authenticate to GHCR
+          command: |
+            GHCR_USER="${GHCR_USERNAME:-$CIRCLE_PROJECT_USERNAME}"
+            if [ -z "$GHCR_TOKEN" ]; then
+              echo "ERROR: GHCR_TOKEN is not set; attach the 'ghcr' context to this job." >&2
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+      - run:
+          name: Build and push baked MLflow tracking server image
+          command: |
+            set -euo pipefail
+            # OCI repository names must be lowercase. The "-mlflow" suffix
+            # keeps the platform image in its own GHCR package, separate from
+            # the trainer image at ghcr.io/<owner>/nebulift.
+            IMAGE_PATH=$(echo "${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}-mlflow" | tr '[:upper:]' '[:lower:]')
+            IMAGE="ghcr.io/${IMAGE_PATH}"
+            SHORT_SHA="${CIRCLE_SHA1:0:7}"
+            BRANCH_TAG=$(echo "${CIRCLE_BRANCH//\//-}" | tr '[:upper:]' '[:lower:]')
+            TAG_ARGS=(--tag "${IMAGE}:${SHORT_SHA}" --tag "${IMAGE}:${BRANCH_TAG}")
+            if [ "$CIRCLE_BRANCH" = "main" ]; then
+              TAG_ARGS+=(--tag "${IMAGE}:latest")
+            fi
+            docker buildx build \
+              --platform linux/arm64,linux/amd64 \
+              "${TAG_ARGS[@]}" \
+              --cache-from "type=registry,ref=${IMAGE}:buildcache" \
+              --cache-to "type=registry,ref=${IMAGE}:buildcache,mode=max" \
+              --file docker/mlflow/Dockerfile \
+              --push \
+              docker/mlflow
+
 workflows:
   ci:
     jobs:
@@ -223,6 +290,13 @@ workflows:
       - image_build:
           requires:
             - test_suite
+          context:
+            - ghcr
+      - image_build_mlflow:
+          # Only gated on the fast lint job because the MLflow server image
+          # shares no source with the trainer/test suite.
+          requires:
+            - lint_and_typecheck
           context:
             - ghcr
 
