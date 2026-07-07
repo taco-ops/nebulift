@@ -9,6 +9,8 @@ kind: Ingress
 metadata:
   name: mlflow
   namespace: nebulift-platform
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
   labels:
     app.kubernetes.io/name: mlflow
     app.kubernetes.io/component: tracking-server
