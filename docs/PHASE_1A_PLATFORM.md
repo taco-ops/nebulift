@@ -93,7 +93,8 @@ Sync-wave ordering inside the platform Application:
 wave 0  namespace + sealedsecret + mlflow ConfigMap
 wave 1  MinIO Deployment + Service
 wave 2  minio-bucket-bootstrap Job (argocd Sync hook)
-wave 3  MLflow Deployment + Service + Ingress
+wave 3  MLflow Deployment + Service
+wave 4  Ingress routes
 ```
 
 ## Initial Bootstrap
