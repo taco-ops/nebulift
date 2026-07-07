@@ -6,8 +6,7 @@ Phase 1b-1 wires the in-cluster distributed trainer into the Phase 1a MLflow
 tracking server. Every distributed training Job now creates an MLflow run from
 rank 0 that captures the hyperparameters, per-epoch metrics, and the final
 checkpoint artifact. The platform deployed in Phase 1a (MLflow + MinIO behind
-the `nebulift-platform` Gateway) is unchanged; this phase is additive on the
-trainer side only.
+Traefik Ingress) is unchanged; this phase is additive on the trainer side only.
 
 The integration is designed to fail open: if MLflow is unreachable, the
 `tracking` extra is missing, or the tracking server rejects a call, the

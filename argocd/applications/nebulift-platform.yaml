@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: mlops-platform
     app.kubernetes.io/part-of: nebulift
   annotations:
-    argocd.argoproj.io/sync-wave: "0"  # Platform deploys before training workloads (wave "1")
+    argocd.argoproj.io/sync-wave: "0"  # Platform deploys before future workload orchestrators.
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -30,7 +30,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true  # Required for Gateway API resources and large annotations
+      - ServerSideApply=true  # Keeps large SealedSecret annotations safe.
       - PrunePropagationPolicy=foreground
       - PruneLast=true
     retry:
@@ -64,6 +64,6 @@ spec:
     - name: 'Description'
       value: 'Nebulift MLOps platform: MinIO object store + MLflow tracking server'
     - name: 'Phase'
-      value: 'Phase 1a'
+      value: 'Phase 1b-2'
     - name: 'Endpoints'
       value: 'mlflow.nebulift.local, minio.nebulift.local, s3.nebulift.local'

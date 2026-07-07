@@ -67,14 +67,9 @@ spec:
       kind: PodDisruptionBudget
     - group: 'autoscaling'
       kind: HorizontalPodAutoscaler
-    # Sealed Secrets (Phase 1a): SealedSecret controller reconciles into native Secret resources.
+    # Sealed Secrets: SealedSecret controller reconciles into native Secret resources.
     - group: 'bitnami.com'
       kind: SealedSecret
-    # Gateway API (Phase 1a): k3s Traefik v3 serves Gateway and HTTPRoute resources.
-    - group: 'gateway.networking.k8s.io'
-      kind: Gateway
-    - group: 'gateway.networking.k8s.io'
-      kind: HTTPRoute
 
   roles:
     - name: admin

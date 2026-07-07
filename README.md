@@ -300,9 +300,9 @@ The full FITS training pipeline smoke test is available through the manual `run-
 The repository includes Kubernetes and Argo CD resources for distributed training workflows and the MLOps platform:
 
 - `k8s/`: training Job base manifests and Kustomize overlays
-- `k8s/platform/`: Phase 1a MLOps platform (MinIO object store, MLflow tracking server, Gateway API HTTPRoutes); MLflow now runs the baked Phase 1b-2 image. See `docs/PHASE_1A_PLATFORM.md` and `docs/PHASE_1B_PLATFORM.md`
-- `cluster-bootstrap/`: one-time cluster prerequisites (Gateway API CRDs, Traefik Gateway provider); see `cluster-bootstrap/README.md`
-- `argocd/`: Argo CD Application, ApplicationSet, and AppProject resources, including the standalone `nebulift-platform` Application
+- `k8s/platform/`: Phase 1a MLOps platform (MinIO object store, MLflow tracking server, Traefik Ingress routes); MLflow now runs the baked Phase 1b-2 image. See `docs/PHASE_1A_PLATFORM.md` and `docs/PHASE_1B_PLATFORM.md`
+- `cluster-bootstrap/`: one-time cluster prerequisites such as Sealed Secrets and optional Gateway API experiments; see `cluster-bootstrap/README.md`
+- `argocd/`: Argo CD AppProject and standalone `nebulift-platform` Application for the MLOps platform
 - `scripts/seal-minio-secret.sh`: kubeseal helper that rotates the MinIO root credential SealedSecret committed to the platform overlay
 - `docker/mlflow/`: Dockerfile for the baked MLflow tracking server image (`ghcr.io/taco-ops/nebulift-mlflow`) consumed by the platform Deployment; see `docs/PHASE_1B_PLATFORM.md`
 - `nebulift/distributed/`: PyTorch distributed training utilities, including the MLflow tracker introduced in Phase 1b-1 (see `docs/PHASE_1B_TRAINER.md`)

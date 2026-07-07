@@ -6,45 +6,61 @@ because:
 
 - The `nebulift` AppProject restricts destinations to `nebulift-*` namespaces +
   `argocd`. CRDs and `kube-system` resources cannot be deployed under it.
-- Gateway API CRDs and the Traefik provider override are infrastructure
+- The Sealed Secrets controller owns a cluster keypair used to decrypt committed
+  `SealedSecret` resources into native `Secret` resources. It must exist before
+  the platform Application syncs the MinIO credential.
+- Optional Gateway API CRDs and Traefik provider overrides are infrastructure
   bootstrap, not application lifecycle. They change rarely and should be applied
-  deliberately.
+  deliberately if a future phase reintroduces Gateway API resources.
 
 ## What's here
 
 | Path | Purpose | Scope |
 |------|---------|-------|
-| `gateway-api/` | Gateway API v1 standard-channel CRDs (`GatewayClass`, `Gateway`, `HTTPRoute`, `ReferenceGrant`). | Cluster |
-| `traefik/helmchartconfig.yaml` | Enables Traefik's Gateway API provider in k3s. | `kube-system` |
+| `gateway-api/` | Optional Gateway API v1 standard-channel CRDs (`GatewayClass`, `Gateway`, `HTTPRoute`, `ReferenceGrant`) for future Gateway API work. | Cluster |
+| `traefik/helmchartconfig.yaml` | Optional k3s Traefik Gateway API provider override. Not required for the current Ingress-based platform. | `kube-system` |
 
 ## Initial setup (run once per cluster)
 
 ```bash
-# 1. Install Gateway API CRDs.
-kubectl apply -k cluster-bootstrap/gateway-api
+# 1. Verify the Sealed Secrets controller if the cluster already has it.
+kubectl get crd sealedsecrets.bitnami.com
+kubectl get deploy -n kube-system sealed-secrets-controller
 
-# 2. Enable Traefik's Gateway API provider.
-kubectl apply -f cluster-bootstrap/traefik/helmchartconfig.yaml
-kubectl -n kube-system rollout restart deploy/traefik
-
-# 3. Verify the auto-created GatewayClass is Accepted.
-kubectl get gatewayclass traefik -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
-# Expect: True
+# 2. Verify Traefik Ingress is available.
+kubectl get ingressclass traefik
 ```
 
-After this, the Argo CD `nebulift-platform` Application can create a `Gateway`
-(referencing `gatewayClassName: traefik`) and `HTTPRoute`s under the
-`nebulift-platform` namespace.
-
-## Upgrading Gateway API
+Before the first platform sync, generate or validate a real MinIO
+`SealedSecret` for this cluster:
 
 ```bash
-# Edit cluster-bootstrap/gateway-api/kustomization.yaml to bump the version,
-# then:
-kubectl apply -k cluster-bootstrap/gateway-api
-kubectl -n kube-system rollout restart deploy/traefik
+scripts/seal-minio-secret.sh
 ```
 
-Validate each upgrade against the Gateway API release notes for breaking
-schema changes:
+The committed ciphertext in `k8s/platform/base/minio/sealedsecret.yaml` is
+cluster-specific. Validate it against the current controller with:
+
+```bash
+kubeseal --validate \
+  --controller-namespace=kube-system \
+  --controller-name=sealed-secrets-controller \
+  < k8s/platform/base/minio/sealedsecret.yaml
+```
+
+## Optional Gateway API Setup
+
+The current platform uses standard Kubernetes `Ingress` resources. If a future
+phase reintroduces Gateway API resources, install the CRDs and enable the k3s
+Traefik Gateway API provider deliberately:
+
+```bash
+kubectl apply -k cluster-bootstrap/gateway-api
+kubectl apply -f cluster-bootstrap/traefik/helmchartconfig.yaml
+kubectl -n kube-system rollout restart deploy/traefik
+kubectl get gatewayclass traefik -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+```
+
+Validate Gateway API upgrades against the release notes for breaking schema
+changes:
 https://github.com/kubernetes-sigs/gateway-api/releases

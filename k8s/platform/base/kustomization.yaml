@@ -11,7 +11,6 @@ metadata:
 # the Application sync options.
 resources:
   - namespace.yaml
-  - gateway.yaml
   - minio/
   - mlflow/
 

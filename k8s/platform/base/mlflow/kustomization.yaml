@@ -10,4 +10,4 @@ resources:
   - configmap.yaml
   - service.yaml
   - deployment.yaml
-  - httproute.yaml
+  - ingress.yaml

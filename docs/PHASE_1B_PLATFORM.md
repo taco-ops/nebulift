@@ -11,7 +11,7 @@ ship in this phase; the Phase 1b-1 client integration continues to work
 unchanged because the tracking endpoint, port, ConfigMap envs, and on-disk
 SQLite layout are all preserved.
 
-The migration is in-place: the existing MLflow Service, HTTPRoute, NFS
+The migration is in-place: the existing MLflow Service, Ingress, NFS
 volume, and SealedSecret are untouched. Argo CD synchronizes the new image
 reference into the cluster and Kubernetes performs a single `Recreate` roll
 of the one-replica Deployment.
@@ -132,7 +132,7 @@ In-cluster behavior changes:
 Behavior **unchanged**:
 
 - Service name and port (`mlflow.nebulift-platform.svc.cluster.local:5000`).
-- HTTPRoute (`mlflow.nebulift.local`).
+- Ingress (`mlflow.nebulift.local`).
 - SQLite metadata DB on NFS at `/mlflow/db`.
 - MinIO-backed artifact storage via `--serve-artifacts`.
 - MinIO root credentials sourced from the `minio-root` SealedSecret.
