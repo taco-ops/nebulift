@@ -12,6 +12,8 @@ kind: Ingress
 metadata:
   name: minio-console
   namespace: nebulift-platform
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
   labels:
     app.kubernetes.io/name: minio
     app.kubernetes.io/component: object-storage
@@ -34,6 +36,8 @@ kind: Ingress
 metadata:
   name: minio-s3
   namespace: nebulift-platform
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
   labels:
     app.kubernetes.io/name: minio
     app.kubernetes.io/component: object-storage
