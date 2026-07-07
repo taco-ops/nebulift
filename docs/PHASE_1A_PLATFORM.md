@@ -78,13 +78,13 @@ These are intentionally kept out of GitOps because the nebulift AppProject is no
                   |
               +---v------------------------+
               | sqlite:////mlflow/db/...   |
-              |   NFS 10.42.0.22 :          |
-              |   /exports/cluster-storage/ |
+              |   NFS 192.168.100.10 :      |
+              |   /mnt/cluster-storage/     |
               |     nebulift-platform/      |
               |       mlflow/db/            |
               +-----------------------------+
 
-   MinIO data path: NFS 10.42.0.22:/exports/cluster-storage/nebulift-platform/minio
+   MinIO data path: NFS 192.168.100.10:/mnt/cluster-storage/nebulift-platform/minio
 ```
 
 Sync-wave ordering inside the platform Application:

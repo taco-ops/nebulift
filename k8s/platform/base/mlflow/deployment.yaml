@@ -143,8 +143,8 @@ spec:
       volumes:
         - name: db
           nfs:
-            server: 10.42.0.22
-            path: /exports/cluster-storage/nebulift-platform/mlflow/db
+            server: 192.168.100.10
+            path: /mnt/cluster-storage/nebulift-platform/mlflow/db
         - name: tmp
           emptyDir:
             sizeLimit: 1Gi
