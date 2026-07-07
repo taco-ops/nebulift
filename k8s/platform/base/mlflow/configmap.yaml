@@ -10,7 +10,7 @@ metadata:
 data:
   # SQLite metadata DB lives on NFS; single-writer is enforced by replicas=1
   # + Recreate strategy. The MLFLOW_S3_ENDPOINT_URL points at the in-cluster
-  # MinIO Service; clients reach MLflow via the HTTPRoute and never need
+  # MinIO Service; clients reach MLflow via Ingress and never need
   # direct S3 creds because --serve-artifacts has MLflow proxy artifact I/O.
   #
   # The MLflow server version is no longer set here; as of Phase 1b-2 it is

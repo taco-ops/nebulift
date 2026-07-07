@@ -1,0 +1,27 @@
+# Ingress exposure for k3s' bundled Traefik v2.x.
+#
+# The original Phase 1a design used Gateway API v1, but this cluster ships
+# Traefik 2.9.10, whose k3s chart still renders Gateway API v1alpha2 resources
+# when the provider is enabled. Standard Ingress keeps the same LAN hostname
+# without forcing an ingress-controller upgrade.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow
+  namespace: nebulift-platform
+  labels:
+    app.kubernetes.io/name: mlflow
+    app.kubernetes.io/component: tracking-server
+    app.kubernetes.io/part-of: nebulift
+spec:
+  rules:
+    - host: mlflow.nebulift.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mlflow
+                port:
+                  number: 5000

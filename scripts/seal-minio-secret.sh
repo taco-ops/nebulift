@@ -89,7 +89,7 @@ EOF
 kubeseal \
   --controller-namespace="${SEALED_SECRETS_NAMESPACE}" \
   --controller-name="${SEALED_SECRETS_CONTROLLER}" \
-  --format=yaml \
+  --format=json \
   --scope=strict \
   <"${TMP_PLAIN}" \
   >"${TMP_SEALED}"
@@ -108,16 +108,16 @@ cat >"${SEALED_SECRET_PATH}" <<'HEADER'
 # MLflow also reads the same secret as AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
 HEADER
 
-# Strip the leading "---" and creationTimestamp that kubeseal sometimes emits,
-# and inject our labels under metadata.
+# Strip creationTimestamp if kubeseal emits it, and inject our labels under
+# metadata. Use JSON so this script only needs Python's stdlib on workstations.
 python3 - "${TMP_SEALED}" "${SEALED_SECRET_PATH}" <<'PYEOF'
+import json
 import sys
-import yaml
 
 src_path, dst_path = sys.argv[1], sys.argv[2]
 
 with open(src_path) as f:
-    doc = yaml.safe_load(f)
+    doc = json.load(f)
 
 metadata = doc.setdefault("metadata", {})
 metadata.pop("creationTimestamp", None)
@@ -138,7 +138,8 @@ template_meta.setdefault("labels", {}).update({
 template["type"] = "Opaque"
 
 with open(dst_path, "a") as f:
-    yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
+    json.dump(doc, f, indent=2)
+    f.write("\n")
 PYEOF
 
 echo

@@ -11,4 +11,4 @@ resources:
   - service.yaml
   - deployment.yaml
   - bucket-bootstrap-job.yaml
-  - httproute.yaml
+  - ingress.yaml
