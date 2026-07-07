@@ -92,7 +92,7 @@ The new job in `.circleci/config.yml`:
 
 ```text
 image_build_mlflow
-  ├── machine: ubuntu-2404
+  ├── machine: ubuntu-2204
   ├── starts the Docker daemon and QEMU binfmt handlers
   ├── creates a dedicated `nebulift-mlflow-builder` buildx instance
   ├── logs in to ghcr.io using $GHCR_TOKEN from the `ghcr` context

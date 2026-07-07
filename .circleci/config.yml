@@ -143,7 +143,7 @@ jobs:
 
   image_build:
     machine:
-      image: ubuntu-2404:current
+      image: ubuntu-2204:current
       docker_layer_caching: true
     resource_class: medium
     steps:
@@ -151,10 +151,16 @@ jobs:
       - run:
           name: Ensure Docker daemon is running
           command: |
-            # ubuntu-2404:current has Docker preinstalled but does not always
+            # The machine executor has Docker preinstalled but does not always
             # auto-start the daemon before the first job step runs.
-            sudo systemctl enable --now docker.service 2>/dev/null || sudo service docker start || true
-            for i in $(seq 1 30); do
+            set +e
+            sudo systemctl start docker.service
+            START_STATUS=$?
+            set -e
+            if [ "$START_STATUS" -ne 0 ]; then
+              echo "Docker service start returned ${START_STATUS}; waiting for daemon anyway." >&2
+            fi
+            for i in $(seq 1 60); do
               if docker info >/dev/null 2>&1; then
                 echo "Docker daemon ready after ${i}s"
                 docker version
@@ -162,8 +168,9 @@ jobs:
               fi
               sleep 1
             done
-            echo "Docker daemon failed to start within 30s" >&2
-            sudo systemctl status docker.service --no-pager || true
+            echo "Docker daemon failed to start within 60s" >&2
+            sudo systemctl status docker.service --no-pager -l || true
+            sudo journalctl -u docker.service --no-pager -n 100 -l || true
             exit 1
       - run:
           name: Set up QEMU for multi-arch emulation
@@ -213,7 +220,7 @@ jobs:
     # the trainer image build because the two share no source code and we
     # want platform image rebuilds even when trainer tests are skipped.
     machine:
-      image: ubuntu-2404:current
+      image: ubuntu-2204:current
       docker_layer_caching: true
     resource_class: medium
     steps:
@@ -221,8 +228,16 @@ jobs:
       - run:
           name: Ensure Docker daemon is running
           command: |
-            sudo systemctl enable --now docker.service 2>/dev/null || sudo service docker start || true
-            for i in $(seq 1 30); do
+            # The machine executor has Docker preinstalled but does not always
+            # auto-start the daemon before the first job step runs.
+            set +e
+            sudo systemctl start docker.service
+            START_STATUS=$?
+            set -e
+            if [ "$START_STATUS" -ne 0 ]; then
+              echo "Docker service start returned ${START_STATUS}; waiting for daemon anyway." >&2
+            fi
+            for i in $(seq 1 60); do
               if docker info >/dev/null 2>&1; then
                 echo "Docker daemon ready after ${i}s"
                 docker version
@@ -230,8 +245,9 @@ jobs:
               fi
               sleep 1
             done
-            echo "Docker daemon failed to start within 30s" >&2
-            sudo systemctl status docker.service --no-pager || true
+            echo "Docker daemon failed to start within 60s" >&2
+            sudo systemctl status docker.service --no-pager -l || true
+            sudo journalctl -u docker.service --no-pager -n 100 -l || true
             exit 1
       - run:
           name: Set up QEMU for multi-arch emulation
