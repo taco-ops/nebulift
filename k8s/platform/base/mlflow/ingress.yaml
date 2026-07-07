@@ -11,6 +11,7 @@ metadata:
   namespace: nebulift-platform
   annotations:
     argocd.argoproj.io/ignore-healthcheck: "true"
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     app.kubernetes.io/name: mlflow
     app.kubernetes.io/component: tracking-server
